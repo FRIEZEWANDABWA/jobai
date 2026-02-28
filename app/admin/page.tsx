@@ -7,10 +7,13 @@ export default function AdminPage() {
     const [settings, setSettings] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
-    // Form states for new source
+    // Form states for adding/editing source
+    const [editingSourceId, setEditingSourceId] = useState<string | null>(null);
     const [newSourceName, setNewSourceName] = useState('');
     const [newSourceUrl, setNewSourceUrl] = useState('');
     const [newSourceType, setNewSourceType] = useState('html');
+    const [newSourcePriority, setNewSourcePriority] = useState(1);
+    const [newSourceActive, setNewSourceActive] = useState(true);
 
     useEffect(() => {
         Promise.all([
@@ -24,28 +27,64 @@ export default function AdminPage() {
             .finally(() => setLoading(false));
     }, []);
 
-    const handleAddSource = async (e: React.FormEvent) => {
+    const handleAddOrEditSource = async (e: React.FormEvent) => {
         e.preventDefault();
-        const newSource = {
+
+        const payload = {
+            ...(editingSourceId ? { id: editingSourceId } : {}),
             name: newSourceName,
             base_url: newSourceUrl,
             type: newSourceType,
             category: 'Other',
-            active: true
+            active: newSourceActive,
+            parsing_config: { priority_level: Number(newSourcePriority), site_url: newSourceUrl }
         };
 
+        const method = editingSourceId ? 'PUT' : 'POST';
+
         const res = await fetch('/api/admin/sources', {
-            method: 'POST',
+            method: method,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newSource)
+            body: JSON.stringify(payload)
         });
 
         if (res.ok) {
-            const added = await res.json();
-            setSources([added, ...sources]);
-            setNewSourceName('');
-            setNewSourceUrl('');
+            const result = await res.json();
+            if (editingSourceId) {
+                setSources(sources.map(s => s.id === editingSourceId ? result : s));
+            } else {
+                setSources([result, ...sources]);
+            }
+            resetForm();
         }
+    };
+
+    const handleDeleteSource = async (id: string) => {
+        if (!confirm('Are you sure you want to delete this source? This will stop future tracking.')) return;
+
+        const res = await fetch(`/api/admin/sources?id=${id}`, { method: 'DELETE' });
+        if (res.ok) {
+            setSources(sources.filter(s => s.id !== id));
+        }
+    };
+
+    const handleEditClick = (s: JobSource) => {
+        setEditingSourceId(s.id);
+        setNewSourceName(s.name);
+        setNewSourceUrl(s.base_url);
+        setNewSourceType(s.type);
+        setNewSourceActive(s.active || false);
+        setNewSourcePriority(s.parsing_config?.priority_level || 1);
+        window.scrollTo({ top: document.getElementById('source-form')?.offsetTop! - 100, behavior: 'smooth' });
+    };
+
+    const resetForm = () => {
+        setEditingSourceId(null);
+        setNewSourceName('');
+        setNewSourceUrl('');
+        setNewSourceType('html');
+        setNewSourcePriority(1);
+        setNewSourceActive(true);
     };
 
     const handleSettingChange = async (key: string, value: string) => {
@@ -110,30 +149,53 @@ export default function AdminPage() {
 
                 {/* Sources Panel */}
                 <section className="bg-white dark:bg-gray-800 p-8 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
-                    <div className="flex justify-between items-center mb-6">
-                        <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Ingestion Topology</h2>
+                    <div id="source-form" className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                            {editingSourceId ? 'Edit Engine Target' : 'Arm New Target'}
+                        </h2>
+                        {editingSourceId && (
+                            <button onClick={resetForm} className="text-sm font-medium text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                                Cancel Editing
+                            </button>
+                        )}
                     </div>
 
-                    <form onSubmit={handleAddSource} className="flex gap-4 mb-8 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700 items-end">
-                        <div className="flex-1">
+                    <form onSubmit={handleAddOrEditSource} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700 items-end">
+                        <div className="lg:col-span-1 border-r border-gray-200 dark:border-gray-700 pr-4 flex items-center h-full">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Status</span>
+                                <input type="checkbox" checked={newSourceActive} onChange={e => setNewSourceActive(e.target.checked)} className="rounded text-blue-600 focus:ring-blue-500 bg-white dark:bg-gray-900" />
+                            </label>
+                        </div>
+                        <div className="lg:col-span-1">
                             <label className="block text-xs font-medium text-gray-500 mb-1">Source Name</label>
-                            <input required value={newSourceName} onChange={e => setNewSourceName(e.target.value)} type="text" className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-900" placeholder="e.g. Fuzu Kenya" />
+                            <input required value={newSourceName} onChange={e => setNewSourceName(e.target.value)} type="text" className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 text-sm" placeholder="e.g. Fuzu" />
                         </div>
-                        <div className="flex-1">
+                        <div className="lg:col-span-1">
                             <label className="block text-xs font-medium text-gray-500 mb-1">Base URL</label>
-                            <input required value={newSourceUrl} onChange={e => setNewSourceUrl(e.target.value)} type="url" className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-900" placeholder="https://..." />
+                            <input required value={newSourceUrl} onChange={e => setNewSourceUrl(e.target.value)} type="url" className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 text-sm" placeholder="https://" />
                         </div>
-                        <div>
+                        <div className="lg:col-span-1">
                             <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
-                            <select value={newSourceType} onChange={e => setNewSourceType(e.target.value)} className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-900">
+                            <select value={newSourceType} onChange={e => setNewSourceType(e.target.value)} className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 text-sm">
                                 <option value="html">HTML (Scrape)</option>
-                                <option value="rss">RSS Feed</option>
                                 <option value="api">JSON API</option>
+                                <option value="rss">RSS Feed</option>
                             </select>
                         </div>
-                        <button type="submit" className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-medium h-[42px]">
-                            Add Source
-                        </button>
+                        <div className="lg:col-span-1">
+                            <label className="block text-xs font-medium text-gray-500 mb-1">Velocity Priority</label>
+                            <select value={newSourcePriority} onChange={e => setNewSourcePriority(Number(e.target.value))} className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 text-sm">
+                                <option value={1}>Tier 1 (Hourly)</option>
+                                <option value={2}>Tier 2 (2 Hours)</option>
+                                <option value={3}>Tier 3 (3 Hours)</option>
+                            </select>
+                        </div>
+                        <div className="lg:col-span-1 flex items-end">
+                            <button type="submit" className={`w-full py-2 ${editingSourceId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-blue-600 hover:bg-blue-700'} text-white rounded-md font-medium text-sm transition h-[38px] shadow-sm`}>
+                                {editingSourceId ? 'Save Edits' : 'Add Source'}
+                            </button>
+                        </div>
                     </form>
 
                     <div className="overflow-x-auto">
@@ -146,6 +208,7 @@ export default function AdminPage() {
                                     <th className="px-4 py-3 text-left leading-4 text-gray-500 tracking-wider">Site Link</th>
                                     <th className="px-4 py-3 text-left leading-4 text-gray-500 tracking-wider">Status</th>
                                     <th className="px-4 py-3 text-left leading-4 text-gray-500 tracking-wider">Last Run</th>
+                                    <th className="px-4 py-3 text-right leading-4 text-gray-500 tracking-wider">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -175,6 +238,10 @@ export default function AdminPage() {
                                         </td>
                                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500">
                                             {s.last_run_at ? new Date(s.last_run_at).toLocaleString() : 'Never'}
+                                        </td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                            <button onClick={() => handleEditClick(s)} className="text-orange-600 hover:text-orange-900 dark:text-orange-400 dark:hover:text-orange-300 mr-4">Edit</button>
+                                            <button onClick={() => handleDeleteSource(s.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300">Delete</button>
                                         </td>
                                     </tr>
                                 ))}

@@ -23,3 +23,35 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }
 }
+
+// PUT edit existing source
+export async function PUT(request: Request) {
+    try {
+        const body = await request.json();
+        const { id, ...updates } = body;
+
+        if (!id) return NextResponse.json({ error: 'Missing source ID' }, { status: 400 });
+
+        const { data, error } = await supabase.from('job_sources').update(updates).eq('id', id).select();
+        if (error) throw error;
+        return NextResponse.json(data[0]);
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
+
+// DELETE a source
+export async function DELETE(request: Request) {
+    try {
+        const url = new URL(request.url);
+        const id = url.searchParams.get('id');
+
+        if (!id) return NextResponse.json({ error: 'Missing source ID' }, { status: 400 });
+
+        const { error } = await supabase.from('job_sources').delete().eq('id', id);
+        if (error) throw error;
+        return NextResponse.json({ success: true });
+    } catch (error: any) {
+        return NextResponse.json({ error: error.message }, { status: 500 });
+    }
+}
