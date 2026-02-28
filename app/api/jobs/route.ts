@@ -2,14 +2,22 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 
 export async function GET(request: Request) {
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId'); // In production, get from session
-
-    if (!userId) {
-        return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
-    }
-
     try {
+        // 1. Resolve the primary system user (The Executive)
+        const { data: profiles } = await supabase
+            .from('user_profiles')
+            .select('id')
+            .not('cv_embedding', 'is', null)
+            .limit(1);
+
+        const user = profiles?.[0];
+
+        if (!user) {
+            return NextResponse.json({ highMatches: [], strongMatches: [], otherJobs: [] });
+        }
+
+        const userId = user.id;
+
         // Fetch jobs with their match scores for this user
         const { data: jobs, error } = await supabase
             .from('jobs')

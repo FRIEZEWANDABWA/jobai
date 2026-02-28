@@ -4,8 +4,10 @@ import { generateEmbedding } from '@/lib/openai';
 import { sendEmailNotification, sendTelegramNotification } from '@/lib/notifier';
 
 // Basic vector dot product assuming normalized embeddings for cosine similarity
-function cosineSimilarity(vecA: number[], vecB: number[]) {
-    return vecA.reduce((sum, a, i) => sum + a * vecB[i], 0);
+function cosineSimilarity(vecA: number[] | string, vecB: number[] | string) {
+    const a = typeof vecA === 'string' ? JSON.parse(vecA) : vecA;
+    const b = typeof vecB === 'string' ? JSON.parse(vecB) : vecB;
+    return a.reduce((sum: number, val: number, i: number) => sum + val * b[i], 0);
 }
 
 export async function POST(request: Request) {
