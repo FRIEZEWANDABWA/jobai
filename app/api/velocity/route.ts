@@ -28,12 +28,16 @@ export async function GET(request: Request) {
             .select('*', { count: 'exact', head: true })
             .gte('created_at', oneWeekAgoIso);
 
-        // 2. High matches per week (score >= 0.85 in last 7 days)
+        // Fetch dynamic system_settings
+        const { data: settings } = await supabase.from('system_settings').select('key, value');
+        const notifyThreshold = parseFloat(settings?.find(s => s.key === 'notify_threshold')?.value || '0.78');
+
+        // 2. High matches per week (score >= notifyThreshold in last 7 days)
         const { count: highMatches } = await supabase
             .from('match_scores')
             .select('*', { count: 'exact', head: true })
             .eq('user_id', userId)
-            .gte('score', 0.85)
+            .gte('score', notifyThreshold)
             .gte('calculated_at', oneWeekAgoIso);
 
         // 3. Applications sent per week
