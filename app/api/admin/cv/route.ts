@@ -19,7 +19,7 @@ export async function POST(request: Request) {
             const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
                 email: email,
                 email_confirm: true,
-                password: 'JobHunterSecure2026!'
+                password: crypto.randomUUID() + 'A1!'
             });
             if (createError) throw createError;
             targetUser = newUser.user;
