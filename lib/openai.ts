@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 
-const openaiApiKey = process.env.OPENAI_API_KEY!;
+const openaiApiKey = process.env.OPENAI_API_KEY || 'dummy_build_key';
 
 // Initialize the OpenAI client for generating embeddings
 export const openai = new OpenAI({
