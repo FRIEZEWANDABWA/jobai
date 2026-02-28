@@ -6,6 +6,7 @@ export default function DashboardPage() {
     const [skills, setSkills] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'high' | 'strong' | 'all'>('high');
+    const [searchQuery, setSearchQuery] = useState('');
 
     const [velocity, setVelocity] = useState({ jobsFound: 0, highMatches: 0, applicationsSent: 0, conversionRate: 0 });
 
@@ -25,6 +26,52 @@ export default function DashboardPage() {
             .finally(() => setLoading(false));
     }, []);
 
+    const handleUpdateStatus = async (jobId: string, status: string) => {
+        try {
+            const res = await fetch('/api/applications', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ job_id: jobId, status })
+            });
+
+            if (res.ok) {
+                // Remove job from view if archived
+                if (status === 'rejected') {
+                    setJobs(prev => ({
+                        highMatches: prev.highMatches.filter((j: any) => j.id !== jobId),
+                        strongMatches: prev.strongMatches.filter((j: any) => j.id !== jobId),
+                        otherJobs: prev.otherJobs.filter((j: any) => j.id !== jobId)
+                    }));
+                } else {
+                    // Otherwise just update its status visually
+                    const updateList = (list: any[]) => list.map(j => j.id === jobId ? { ...j, status } : j);
+                    setJobs(prev => ({
+                        highMatches: updateList(prev.highMatches),
+                        strongMatches: updateList(prev.strongMatches),
+                        otherJobs: updateList(prev.otherJobs)
+                    }));
+                }
+
+                // Optimistically update apps sent if marked applied
+                if (status === 'applied') {
+                    setVelocity(v => ({ ...v, applicationsSent: v.applicationsSent + 1 }));
+                }
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    const filterJobs = (jobList: any[]) => {
+        if (!searchQuery.trim()) return jobList;
+        const lowerQuery = searchQuery.toLowerCase();
+        return jobList.filter(j =>
+            j.title.toLowerCase().includes(lowerQuery) ||
+            j.company.toLowerCase().includes(lowerQuery) ||
+            (j.location && j.location.toLowerCase().includes(lowerQuery))
+        );
+    };
+
     const renderJobCard = (job: any, isHigh: boolean = false) => (
         <div key={job.id} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-shadow">
             <div className="flex justify-between items-start mb-4">
@@ -39,14 +86,31 @@ export default function DashboardPage() {
             <p className="text-gray-600 dark:text-gray-300 text-sm line-clamp-3 mb-6">
                 {job.description}
             </p>
-            <div className="flex justify-between items-center">
-                <span className="text-xs text-gray-400 dark:text-gray-500">
-                    Posted: {job.posted_date ? new Date(job.posted_date).toLocaleDateString() : 'Recent'}
-                </span>
-                <a href={job.url} target="_blank" rel="noopener noreferrer"
-                    className="px-5 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg font-medium text-sm hover:opacity-90 transition-opacity">
-                    Apply Now
-                </a>
+            <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                <div className="flex gap-2">
+                    {job.status === 'applied' || job.status === 'interviewing' || job.status === 'offer' ? (
+                        <span className="px-3 py-1.5 bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 font-semibold rounded-lg text-sm flex items-center gap-1">
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                            {job.status.charAt(0).toUpperCase() + job.status.slice(1)}
+                        </span>
+                    ) : (
+                        <button onClick={() => handleUpdateStatus(job.id, 'applied')} className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-200 transition">
+                            Mark as Applied
+                        </button>
+                    )}
+                    <button onClick={() => handleUpdateStatus(job.id, 'rejected')} className="px-3 py-1.5 text-sm font-semibold rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition">
+                        Archive
+                    </button>
+                </div>
+                <div className="flex items-center gap-4">
+                    <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">
+                        {job.posted_date ? new Date(job.posted_date).toLocaleDateString() : 'Recent'}
+                    </span>
+                    <a href={job.url} target="_blank" rel="noopener noreferrer"
+                        className="px-5 py-2 bg-black dark:bg-white text-white dark:text-black rounded-lg font-bold text-sm hover:scale-105 transition-transform shadow-sm">
+                        Apply Link
+                    </a>
+                </div>
             </div>
         </div>
     );
@@ -97,23 +161,37 @@ export default function DashboardPage() {
                     </div>
                 )}
 
-                {/* Tabs */}
-                <div className="flex space-x-2 border-b border-gray-200 dark:border-gray-800 mb-8">
-                    <button
-                        onClick={() => setActiveTab('high')}
-                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'high' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-                        🔥 High Matches ({jobs.highMatches.length})
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('strong')}
-                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'strong' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-                        ⚡ Strong Matches ({jobs.strongMatches.length})
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('all')}
-                        className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'all' ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-                        📊 All Jobs ({jobs.otherJobs.length})
-                    </button>
+                {/* Tabs & Search */}
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center border-b border-gray-200 dark:border-gray-800 mb-8 gap-4 pb-2 sm:pb-0">
+                    <div className="flex space-x-2">
+                        <button
+                            onClick={() => setActiveTab('high')}
+                            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'high' ? 'border-orange-500 text-orange-600 dark:text-orange-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                            🔥 High Matches ({jobs.highMatches.length})
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('strong')}
+                            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'strong' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                            ⚡ Strong Matches ({jobs.strongMatches.length})
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('all')}
+                            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'all' ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                            📊 All Jobs ({jobs.otherJobs.length})
+                        </button>
+                    </div>
+                    <div className="relative w-full sm:w-64 pb-2 sm:pb-0">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none pb-2 sm:pb-0">
+                            <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Filter jobs..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg leading-5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+                        />
+                    </div>
                 </div>
 
                 {/* Content */}
@@ -127,16 +205,16 @@ export default function DashboardPage() {
                     <div className="flex flex-col lg:flex-row gap-8">
                         {/* Left Column: Job Cards */}
                         <div className="flex-1 grid gap-6 grid-cols-1 xl:grid-cols-2 content-start">
-                            {activeTab === 'high' && jobs.highMatches.map(j => renderJobCard(j, true))}
-                            {activeTab === 'strong' && jobs.strongMatches.map(j => renderJobCard(j, false))}
-                            {activeTab === 'all' && jobs.otherJobs.map(j => renderJobCard(j, false))}
+                            {activeTab === 'high' && filterJobs(jobs.highMatches).map(j => renderJobCard(j, true))}
+                            {activeTab === 'strong' && filterJobs(jobs.strongMatches).map(j => renderJobCard(j, false))}
+                            {activeTab === 'all' && filterJobs(jobs.otherJobs).map(j => renderJobCard(j, false))}
 
-                            {((activeTab === 'high' && jobs.highMatches.length === 0) ||
-                                (activeTab === 'strong' && jobs.strongMatches.length === 0) ||
-                                (activeTab === 'all' && jobs.otherJobs.length === 0)) && (
+                            {((activeTab === 'high' && filterJobs(jobs.highMatches).length === 0) ||
+                                (activeTab === 'strong' && filterJobs(jobs.strongMatches).length === 0) ||
+                                (activeTab === 'all' && filterJobs(jobs.otherJobs).length === 0)) && (
                                     <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
                                         <span className="text-4xl mb-4">🤷‍♂️</span>
-                                        <p className="text-gray-500 dark:text-gray-400">No jobs found in this category right now.</p>
+                                        <p className="text-gray-500 dark:text-gray-400">No jobs match your criteria right now.</p>
                                     </div>
                                 )}
                         </div>

@@ -19,11 +19,13 @@ export async function GET(request: Request) {
         const userId = user.id;
 
         // Fetch jobs with their match scores for this user
+        // Join with applications to see status ('applied', 'rejected', etc)
         const { data: jobs, error } = await supabase
             .from('jobs')
             .select(`
          *,
-         match_scores!inner(score)
+         match_scores!inner(score),
+         applications(status)
        `)
             .eq('match_scores.user_id', userId);
 
@@ -34,12 +36,21 @@ export async function GET(request: Request) {
         const dashThreshold = parseFloat(settings?.find(s => s.key === 'dashboard_threshold')?.value || '0.70');
         const notifyThreshold = parseFloat(settings?.find(s => s.key === 'notify_threshold')?.value || '0.85');
 
-        // Categorize
+        // Categorize and filter out archived/rejected jobs
         const formattedJobs = jobs?.map(job => {
-            // Handle array wrap from standard Supabase join notation
             const score = Array.isArray(job.match_scores) ? job.match_scores[0]?.score : (job.match_scores as any)?.score;
-            return { ...job, match_score: score };
-        }).sort((a, b) => b.match_score - a.match_score) || [];
+
+            // Extract the user's application status on this specific job
+            let status = null;
+            if (job.applications && Array.isArray(job.applications) && job.applications.length > 0) {
+                status = job.applications[0].status;
+            } else if (job.applications && (job.applications as any).status) {
+                status = (job.applications as any).status;
+            }
+
+            return { ...job, match_score: score, status };
+        }).filter(j => j.status !== 'rejected') // Do not show explicitly archived jobs in active feeds
+            .sort((a, b) => b.match_score - a.match_score) || [];
 
         const highMatches = formattedJobs.filter(j => j.match_score >= notifyThreshold);
         const strongMatches = formattedJobs.filter(j => j.match_score >= dashThreshold && j.match_score < notifyThreshold);
