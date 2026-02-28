@@ -109,6 +109,7 @@ async function scrapeHtml(source: import('../types/source').JobSource): Promise<
         const companySelector = config.company || '.company, .employer';
         const locationSelector = config.location || '.location';
         const linkSelector = config.url || 'a';
+        const descSelector = config.description || '.description, .summary, .content, p';
 
         const jobs: Partial<Job>[] = [];
 
@@ -130,11 +131,14 @@ async function scrapeHtml(source: import('../types/source').JobSource): Promise<
             const location = $(element).find(locationSelector).first().text().trim() || null;
 
             if (title) {
+                let description = $(element).find(descSelector).text().trim() || $(element).text().trim();
+                description = description.replace(/\s+/g, ' ').substring(0, 1500) || `${title} at ${company} in ${location || 'Kenya'}.`;
+
                 jobs.push({
                     title,
                     company,
                     location,
-                    description: `HTML scraped description preview.`,
+                    description,
                     url,
                     posted_date: new Date().toISOString(),
                     dedupe_hash: generateDedupeHash(title, company, new Date().toISOString()),

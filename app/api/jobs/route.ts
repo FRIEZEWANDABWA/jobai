@@ -25,8 +25,7 @@ export async function GET(request: Request) {
          *,
          match_scores!inner(score)
        `)
-            .eq('match_scores.user_id', userId)
-            .order('match_scores(score)', { ascending: false });
+            .eq('match_scores.user_id', userId);
 
         if (error) throw error;
 
@@ -40,7 +39,7 @@ export async function GET(request: Request) {
             // Handle array wrap from standard Supabase join notation
             const score = Array.isArray(job.match_scores) ? job.match_scores[0]?.score : (job.match_scores as any)?.score;
             return { ...job, match_score: score };
-        }) || [];
+        }).sort((a, b) => b.match_score - a.match_score) || [];
 
         const highMatches = formattedJobs.filter(j => j.match_score >= notifyThreshold);
         const strongMatches = formattedJobs.filter(j => j.match_score >= dashThreshold && j.match_score < notifyThreshold);
