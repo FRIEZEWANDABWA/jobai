@@ -141,7 +141,9 @@ export default function AdminPage() {
                             <thead>
                                 <tr>
                                     <th className="px-4 py-3 text-left leading-4 text-gray-500 tracking-wider">Name</th>
+                                    <th className="px-4 py-3 text-left leading-4 text-gray-500 tracking-wider">Priority</th>
                                     <th className="px-4 py-3 text-left leading-4 text-gray-500 tracking-wider">Type</th>
+                                    <th className="px-4 py-3 text-left leading-4 text-gray-500 tracking-wider">Site Link</th>
                                     <th className="px-4 py-3 text-left leading-4 text-gray-500 tracking-wider">Status</th>
                                     <th className="px-4 py-3 text-left leading-4 text-gray-500 tracking-wider">Last Run</th>
                                 </tr>
@@ -153,7 +155,19 @@ export default function AdminPage() {
                                             <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{s.name}</div>
                                             <div className="text-sm text-gray-500">{s.base_url}</div>
                                         </td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm font-bold text-gray-600 dark:text-gray-300">
+                                            Tier {s.parsing_config?.priority_level || 1}
+                                        </td>
                                         <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 uppercase">{s.type}</td>
+                                        <td className="px-4 py-4 whitespace-nowrap text-sm">
+                                            {s.parsing_config?.site_url ? (
+                                                <a href={s.parsing_config.site_url} target="_blank" rel="noopener noreferrer" className="text-blue-500 dark:text-blue-400 hover:underline">
+                                                    Visit Site &↗
+                                                </a>
+                                            ) : (
+                                                <span className="text-gray-400">N/A</span>
+                                            )}
+                                        </td>
                                         <td className="px-4 py-4 whitespace-nowrap">
                                             <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${s.active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
                                                 {s.active ? 'Active' : 'Inactive'}

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import * as cheerio from 'cheerio';
 import { Job } from '../types/job';
 
 /**
@@ -81,9 +82,70 @@ async function scrapeRss(source: import('../types/source').JobSource): Promise<P
     return [];
 }
 
-// 3. HTML Scraper Example (Using fetch, would normally use 'cheerio')
+// 3. HTML Scraper Example (Using fetch and cheerio)
 async function scrapeHtml(source: import('../types/source').JobSource): Promise<Partial<Job>[]> {
-    console.log(`Mock HTML Scrape for ${source.name}`);
-    // Implementation goes here
-    return [];
+    console.log(`HTML Scrape for ${source.name} via ${source.base_url}`);
+
+    try {
+        const response = await fetch(source.base_url, {
+            headers: {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 JobHunterAI/1.0",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5"
+            }
+        });
+
+        if (!response.ok) {
+            console.error(`HTML scrape failed for ${source.name} with status ${response.status}`);
+            return [];
+        }
+
+        const html = await response.text();
+        const $ = cheerio.load(html);
+        const config = source.parsing_config || {};
+
+        const itemSelector = config.item || 'article, .job, .job-listing, .card';
+        const titleSelector = config.title || 'h2, h3, .title';
+        const companySelector = config.company || '.company, .employer';
+        const locationSelector = config.location || '.location';
+        const linkSelector = config.url || 'a';
+
+        const jobs: Partial<Job>[] = [];
+
+        $(itemSelector).each((_, element) => {
+            const title = $(element).find(titleSelector).first().text().trim();
+            const companyRaw = $(element).find(companySelector).first().text().trim() || source.name;
+            const company = companyRaw.replace(/\s+/g, ' ');
+
+            let url = $(element).find(linkSelector).first().attr('href') || '';
+            if (!url) { // If linkSelector wasn't found deep inside, maybe the item IS the A tag
+                url = $(element).attr('href') || source.base_url;
+            }
+
+            if (url.startsWith('/')) {
+                const baseUrlObj = new URL(source.base_url);
+                url = `${baseUrlObj.protocol}//${baseUrlObj.host}${url}`;
+            }
+
+            const location = $(element).find(locationSelector).first().text().trim() || null;
+
+            if (title) {
+                jobs.push({
+                    title,
+                    company,
+                    location,
+                    description: `HTML scraped description preview.`,
+                    url,
+                    posted_date: new Date().toISOString(),
+                    dedupe_hash: generateDedupeHash(title, company, new Date().toISOString()),
+                    source_id: source.id
+                });
+            }
+        });
+
+        return jobs;
+    } catch (error) {
+        console.error(`Exception while running HTML parsing on ${source.name}:`, error);
+        return [];
+    }
 }

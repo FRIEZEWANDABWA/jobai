@@ -18,11 +18,26 @@ export async function POST(request: Request) {
         if (sourceError) throw sourceError;
         if (!sources || sources.length === 0) return NextResponse.json({ message: 'No active sources' });
 
-        console.log(`Starting ingestion of ${sources.length} sources`);
+        // 2. Filter sources by Priority Tier (Tier 1: Hourly, Tier 2: 2hrs, Tier 3: 3hrs)
+        const now = new Date();
+        const sourcesToRun = sources.filter(source => {
+            const priority = source.parsing_config?.priority_level || 1;
+            if (!source.last_run_at) return true; // Never run before
+
+            const diffMins = (now.getTime() - new Date(source.last_run_at).getTime()) / (1000 * 60);
+
+            if (priority === 1 && diffMins >= 50) return true; // ~1 hour
+            if (priority === 2 && diffMins >= 110) return true; // ~2 hours
+            if (priority === 3 && diffMins >= 170) return true; // ~3 hours
+
+            return false;
+        });
+
+        console.log(`Starting ingestion of ${sourcesToRun.length} sources (out of ${sources.length} active)`);
         let totalIngested = 0;
 
-        // 2. Iterate and scrape
-        for (const source of sources) {
+        // 3. Iterate and scrape
+        for (const source of sourcesToRun) {
             const jobs = await scrapeSource(source);
             if (jobs.length > 0) {
                 // 3. Upsert to / insert ignoring duplicates using raw SQL if needed,
