@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
-    const [jobs, setJobs] = useState({ highMatches: [], strongMatches: [], otherJobs: [] });
+    const [jobs, setJobs] = useState<{ highMatches: any[], strongMatches: any[], otherJobs: any[] }>({ highMatches: [], strongMatches: [], otherJobs: [] });
     const [skills, setSkills] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'high' | 'strong' | 'all'>('high');
