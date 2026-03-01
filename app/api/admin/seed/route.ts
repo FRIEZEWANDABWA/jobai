@@ -4,28 +4,28 @@ import { supabase } from '@/lib/supabase';
 export async function GET() {
     const newSources = [
         {
-            name: 'Safal Group',
-            base_url: 'https://safal.mcidirecthire.com/default/External/CurrentOpportunities?Ref=TEkBhDYErs0qhHgueWeCgt_yRI-cnPLR1MRk1RR6CprzB-U-2v9zdrDRc_O8UHXm',
+            name: 'CareerJet IT Manager',
+            base_url: 'https://www.careerjet.co.ke/jobs?s=IT+Manager&l=Nairobi&radius=25&ct=p&cp=f&cmp=&sort=date',
             type: 'html',
-            category: 'Other',
+            category: 'IT Management',
             active: true,
-            parsing_config: { priority_level: 1, site_url: 'https://safal.mcidirecthire.com/default/External/CurrentOpportunities?Ref=TEkBhDYErs0qhHgueWeCgt_yRI-cnPLR1MRk1RR6CprzB-U-2v9zdrDRc_O8UHXm' }
+            parsing_config: { priority_level: 1, site_url: 'https://www.careerjet.co.ke' }
         },
         {
-            name: 'Corporate Staffing IT',
-            base_url: 'https://www.corporatestaffing.co.ke/category/it-jobs-in-kenya/',
+            name: 'CareerJet IT',
+            base_url: 'https://www.careerjet.co.ke/jobs?s=IT&l=Nairobi',
             type: 'html',
             category: 'IT',
             active: true,
-            parsing_config: { priority_level: 1, site_url: 'https://www.corporatestaffing.co.ke/category/it-jobs-in-kenya/' }
+            parsing_config: { priority_level: 1, site_url: 'https://www.careerjet.co.ke' }
         },
         {
-            name: 'KenyaJob IT & Telecoms',
-            base_url: 'https://www.kenyajob.com/job-vacancies-search-kenya/?f%5B0%5D=im_field_offre_metiers%3A31',
+            name: 'CareerJet InfoTech',
+            base_url: 'https://www.careerjet.co.ke/jobs?s=information+technology&l=Nairobi',
             type: 'html',
             category: 'IT',
             active: true,
-            parsing_config: { priority_level: 1, site_url: 'https://www.kenyajob.com/job-vacancies-search-kenya/?f%5B0%5D=im_field_offre_metiers%3A31' }
+            parsing_config: { priority_level: 1, site_url: 'https://www.careerjet.co.ke' }
         }
     ];
 
