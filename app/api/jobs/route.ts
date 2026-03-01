@@ -52,11 +52,14 @@ export async function GET(request: Request) {
         }).filter(j => j.status !== 'rejected') // Do not show explicitly archived jobs in active feeds
             .sort((a, b) => b.match_score - a.match_score) || [];
 
-        const highMatches = formattedJobs.filter(j => j.match_score >= notifyThreshold);
-        const strongMatches = formattedJobs.filter(j => j.match_score >= dashThreshold && j.match_score < notifyThreshold);
-        const otherJobs = formattedJobs.filter(j => j.match_score < dashThreshold);
+        const unappliedJobs = formattedJobs.filter(j => !['applied', 'interviewing', 'offer'].includes(j.status));
+        const appliedJobs = formattedJobs.filter(j => ['applied', 'interviewing', 'offer'].includes(j.status));
 
-        return NextResponse.json({ highMatches, strongMatches, otherJobs });
+        const highMatches = unappliedJobs.filter(j => j.match_score >= notifyThreshold);
+        const strongMatches = unappliedJobs.filter(j => j.match_score >= dashThreshold && j.match_score < notifyThreshold);
+        const otherJobs = unappliedJobs.filter(j => j.match_score < dashThreshold);
+
+        return NextResponse.json({ highMatches, strongMatches, otherJobs, appliedJobs });
     } catch (error: any) {
         console.error('Fetch Jobs Error:', error);
         return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });

@@ -2,10 +2,10 @@
 import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
-    const [jobs, setJobs] = useState<{ highMatches: any[], strongMatches: any[], otherJobs: any[] }>({ highMatches: [], strongMatches: [], otherJobs: [] });
+    const [jobs, setJobs] = useState<{ highMatches: any[], strongMatches: any[], otherJobs: any[], appliedJobs: any[] }>({ highMatches: [], strongMatches: [], otherJobs: [], appliedJobs: [] });
     const [skills, setSkills] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'high' | 'strong' | 'all'>('high');
+    const [activeTab, setActiveTab] = useState<'high' | 'strong' | 'all' | 'applied'>('high');
     const [searchQuery, setSearchQuery] = useState('');
 
     const [velocity, setVelocity] = useState({ jobsFound: 0, highMatches: 0, applicationsSent: 0, conversionRate: 0 });
@@ -35,20 +35,23 @@ export default function DashboardPage() {
             });
 
             if (res.ok) {
-                // Remove job from view if archived
+                const allJobs = [...jobs.highMatches, ...jobs.strongMatches, ...jobs.otherJobs, ...jobs.appliedJobs];
+                const jobToMove = allJobs.find(j => j.id === jobId);
+
                 if (status === 'rejected') {
                     setJobs(prev => ({
                         highMatches: prev.highMatches.filter((j: any) => j.id !== jobId),
                         strongMatches: prev.strongMatches.filter((j: any) => j.id !== jobId),
-                        otherJobs: prev.otherJobs.filter((j: any) => j.id !== jobId)
+                        otherJobs: prev.otherJobs.filter((j: any) => j.id !== jobId),
+                        appliedJobs: prev.appliedJobs.filter((j: any) => j.id !== jobId)
                     }));
                 } else {
-                    // Otherwise just update its status visually
-                    const updateList = (list: any[]) => list.map(j => j.id === jobId ? { ...j, status } : j);
+                    const updatedJob = { ...jobToMove, status };
                     setJobs(prev => ({
-                        highMatches: updateList(prev.highMatches),
-                        strongMatches: updateList(prev.strongMatches),
-                        otherJobs: updateList(prev.otherJobs)
+                        highMatches: prev.highMatches.filter((j: any) => j.id !== jobId),
+                        strongMatches: prev.strongMatches.filter((j: any) => j.id !== jobId),
+                        otherJobs: prev.otherJobs.filter((j: any) => j.id !== jobId),
+                        appliedJobs: [updatedJob, ...prev.appliedJobs.filter((j: any) => j.id !== jobId)]
                     }));
                 }
 
@@ -150,7 +153,9 @@ export default function DashboardPage() {
                             <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">High Matches (7d)</span>
                             <span className="text-2xl font-bold text-orange-600 dark:text-orange-400 mt-1">{velocity.highMatches}</span>
                         </div>
-                        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col justify-center">
+                        <div
+                            onClick={() => setActiveTab('applied')}
+                            className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col justify-center cursor-pointer hover:border-blue-500 transition-colors">
                             <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">Apps Sent (7d)</span>
                             <span className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-1">{velocity.applicationsSent}</span>
                         </div>
@@ -178,6 +183,11 @@ export default function DashboardPage() {
                             onClick={() => setActiveTab('all')}
                             className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'all' ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
                             📊 All Jobs ({jobs.otherJobs.length})
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('applied')}
+                            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'applied' ? 'border-green-500 text-green-600 dark:text-green-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                            ✅ Applied ({jobs.appliedJobs.length})
                         </button>
                     </div>
                     <div className="relative w-full sm:w-64 pb-2 sm:pb-0">
@@ -208,10 +218,12 @@ export default function DashboardPage() {
                             {activeTab === 'high' && filterJobs(jobs.highMatches).map(j => renderJobCard(j, true))}
                             {activeTab === 'strong' && filterJobs(jobs.strongMatches).map(j => renderJobCard(j, false))}
                             {activeTab === 'all' && filterJobs(jobs.otherJobs).map(j => renderJobCard(j, false))}
+                            {activeTab === 'applied' && filterJobs(jobs.appliedJobs).map(j => renderJobCard(j, false))}
 
                             {((activeTab === 'high' && filterJobs(jobs.highMatches).length === 0) ||
                                 (activeTab === 'strong' && filterJobs(jobs.strongMatches).length === 0) ||
-                                (activeTab === 'all' && filterJobs(jobs.otherJobs).length === 0)) && (
+                                (activeTab === 'all' && filterJobs(jobs.otherJobs).length === 0) ||
+                                (activeTab === 'applied' && filterJobs(jobs.appliedJobs).length === 0)) && (
                                     <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
                                         <span className="text-4xl mb-4">🤷‍♂️</span>
                                         <p className="text-gray-500 dark:text-gray-400">No jobs match your criteria right now.</p>
