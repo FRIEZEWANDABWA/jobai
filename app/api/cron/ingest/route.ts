@@ -27,8 +27,8 @@ export async function POST(request: Request) {
             const diffMins = (now.getTime() - new Date(source.last_run_at).getTime()) / (1000 * 60);
 
             if (priority === 1 && diffMins >= 50) return true; // ~1 hour
-            if (priority === 2 && diffMins >= 110) return true; // ~2 hours
-            if (priority === 3 && diffMins >= 170) return true; // ~3 hours
+            if (priority === 2 && diffMins >= 350) return true; // ~6 hours
+            if (priority === 3 && diffMins >= 710) return true; // ~12 hours
 
             return false;
         });
