@@ -108,7 +108,7 @@ async function scrapeHtml(source: import('../types/source').JobSource): Promise<
         const titleSelector = config.title || 'h2, h3, .title';
         const companySelector = config.company || '.company, .employer';
         const locationSelector = config.location || '.location';
-        const linkSelector = config.url || 'a';
+        const linkSelector = config.url || 'h2 a, h3 a, h4 a, .title a, a.job-title, a[data-href]';
         const descSelector = config.description || '.description, .summary, .content, p';
 
         const jobs: Partial<Job>[] = [];
