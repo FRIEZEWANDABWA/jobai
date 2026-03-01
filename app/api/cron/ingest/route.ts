@@ -57,10 +57,10 @@ export async function POST(request: Request) {
                         totalIngested++;
                     }
                 }
-
-                // Update last run time
-                await supabase.from('job_sources').update({ last_run_at: new Date().toISOString() }).eq('id', source.id);
             }
+
+            // Update last run time regardless of whether new jobs were found
+            await supabase.from('job_sources').update({ last_run_at: new Date().toISOString() }).eq('id', source.id);
         }
 
         return NextResponse.json({ success: true, message: `Ingestion complete. ${totalIngested} new jobs added.` });

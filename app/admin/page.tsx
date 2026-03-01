@@ -6,6 +6,9 @@ export default function AdminPage() {
     const [sources, setSources] = useState<JobSource[]>([]);
     const [settings, setSettings] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [isTriggering, setIsTriggering] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [tierFilter, setTierFilter] = useState('all');
 
     // Form states for adding/editing source
     const [editingSourceId, setEditingSourceId] = useState<string | null>(null);
@@ -99,6 +102,30 @@ export default function AdminPage() {
             alert('Setting updated!');
         }
     };
+
+    const handleTriggerScan = async () => {
+        setIsTriggering(true);
+        try {
+            const res = await fetch('/api/admin/trigger', { method: 'POST' });
+            const data = await res.json();
+            if (data.success) {
+                alert(`✅ Scan complete!\n\nIngestion: ${data.ingestData.message || 'Done'}\nAI Match: Discovered ${data.matchData.newHighMatches || 0} New High Matches.`);
+            } else {
+                alert('Scan encountered an error.');
+            }
+        } catch (error) {
+            console.error(error);
+            alert('Failed to trigger scan.');
+        } finally {
+            setIsTriggering(false);
+        }
+    };
+
+    const filteredSources = sources.filter(s => {
+        const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.base_url.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesTier = tierFilter === 'all' || s.parsing_config?.priority_level?.toString() === tierFilter;
+        return matchesSearch && matchesTier;
+    });
 
     if (loading) return <div className="p-8 text-center mt-20 text-gray-500">Loading admin data...</div>;
 
@@ -198,6 +225,35 @@ export default function AdminPage() {
                         </div>
                     </form>
 
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-4 gap-4 bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
+                        <div className="flex gap-4 w-full md:w-auto">
+                            <input
+                                type="text"
+                                placeholder="Search Source Name or URL..."
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                className="w-full md:w-64 rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-900 text-sm focus:ring-2 focus:ring-blue-500"
+                            />
+                            <select
+                                value={tierFilter}
+                                onChange={e => setTierFilter(e.target.value)}
+                                className="rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-900 text-sm focus:ring-2 focus:ring-blue-500"
+                            >
+                                <option value="all">All Tiers</option>
+                                <option value="1">Tier 1 Only</option>
+                                <option value="2">Tier 2 Only</option>
+                                <option value="3">Tier 3 Only</option>
+                            </select>
+                        </div>
+                        <button
+                            onClick={handleTriggerScan}
+                            disabled={isTriggering}
+                            className="w-full md:w-auto px-6 py-2.5 bg-black dark:bg-white text-white dark:text-black font-semibold rounded-lg hover:opacity-90 transition shadow-sm disabled:opacity-50"
+                        >
+                            {isTriggering ? 'Running Scan... Please wait' : '🛠️ Force AI Scan Now'}
+                        </button>
+                    </div>
+
                     <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                             <thead>
@@ -212,7 +268,7 @@ export default function AdminPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                {sources.map(s => (
+                                {filteredSources.map(s => (
                                     <tr key={s.id}>
                                         <td className="px-4 py-4 whitespace-nowrap">
                                             <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{s.name}</div>
