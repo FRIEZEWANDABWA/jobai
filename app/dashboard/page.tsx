@@ -2,10 +2,10 @@
 import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
-    const [jobs, setJobs] = useState<{ highMatches: any[], strongMatches: any[], otherJobs: any[], appliedJobs: any[] }>({ highMatches: [], strongMatches: [], otherJobs: [], appliedJobs: [] });
+    const [jobs, setJobs] = useState<{ highMatches: any[], strongMatches: any[], otherJobs: any[], appliedJobs: any[], archivedJobs: any[] }>({ highMatches: [], strongMatches: [], otherJobs: [], appliedJobs: [], archivedJobs: [] });
     const [skills, setSkills] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'high' | 'strong' | 'all' | 'applied'>('high');
+    const [activeTab, setActiveTab] = useState<'high' | 'strong' | 'all' | 'applied' | 'archived'>('high');
     const [searchQuery, setSearchQuery] = useState('');
 
     const [velocity, setVelocity] = useState({ jobsFound: 0, highMatches: 0, applicationsSent: 0, conversionRate: 0 });
@@ -35,22 +35,34 @@ export default function DashboardPage() {
             });
 
             if (res.ok) {
-                const allJobs = [...jobs.highMatches, ...jobs.strongMatches, ...jobs.otherJobs, ...jobs.appliedJobs];
+                const allJobs = [...jobs.highMatches, ...jobs.strongMatches, ...jobs.otherJobs, ...jobs.appliedJobs, ...jobs.archivedJobs];
                 const jobToMove = allJobs.find(j => j.id === jobId);
 
+                const removeFromAll = (prev: typeof jobs) => ({
+                    highMatches: prev.highMatches.filter((j: any) => j.id !== jobId),
+                    strongMatches: prev.strongMatches.filter((j: any) => j.id !== jobId),
+                    otherJobs: prev.otherJobs.filter((j: any) => j.id !== jobId),
+                    appliedJobs: prev.appliedJobs.filter((j: any) => j.id !== jobId),
+                    archivedJobs: prev.archivedJobs.filter((j: any) => j.id !== jobId)
+                });
+
                 if (status === 'rejected') {
+                    const archivedJob = { ...jobToMove, status: 'rejected' };
                     setJobs(prev => ({
-                        highMatches: prev.highMatches.filter((j: any) => j.id !== jobId),
-                        strongMatches: prev.strongMatches.filter((j: any) => j.id !== jobId),
-                        otherJobs: prev.otherJobs.filter((j: any) => j.id !== jobId),
-                        appliedJobs: prev.appliedJobs.filter((j: any) => j.id !== jobId)
+                        ...removeFromAll(prev),
+                        archivedJobs: [archivedJob, ...prev.archivedJobs.filter((j: any) => j.id !== jobId)]
+                    }));
+                } else if (status === 'unarchive') {
+                    // Restore to main feed by setting status to null
+                    const restoredJob = { ...jobToMove, status: null };
+                    setJobs(prev => ({
+                        ...removeFromAll(prev),
+                        strongMatches: [restoredJob, ...prev.strongMatches]
                     }));
                 } else {
                     const updatedJob = { ...jobToMove, status };
                     setJobs(prev => ({
-                        highMatches: prev.highMatches.filter((j: any) => j.id !== jobId),
-                        strongMatches: prev.strongMatches.filter((j: any) => j.id !== jobId),
-                        otherJobs: prev.otherJobs.filter((j: any) => j.id !== jobId),
+                        ...removeFromAll(prev),
                         appliedJobs: [updatedJob, ...prev.appliedJobs.filter((j: any) => j.id !== jobId)]
                     }));
                 }
@@ -58,6 +70,45 @@ export default function DashboardPage() {
                 // Optimistically update apps sent if marked applied
                 if (status === 'applied') {
                     setVelocity(v => ({ ...v, applicationsSent: v.applicationsSent + 1 }));
+                }
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    const handleDeleteJob = async (jobId: string) => {
+        if (!confirm('⚠️ Permanently delete this job? This cannot be undone.')) return;
+        try {
+            const res = await fetch(`/api/applications?job_id=${jobId}`, { method: 'DELETE' });
+            if (res.ok) {
+                setJobs(prev => ({
+                    ...prev,
+                    archivedJobs: prev.archivedJobs.filter((j: any) => j.id !== jobId)
+                }));
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
+
+    const handleUnarchive = async (jobId: string) => {
+        try {
+            // Delete the 'rejected' application record to restore the job
+            const res = await fetch('/api/applications', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ job_id: jobId, status: 'unarchive' })
+            });
+            if (res.ok) {
+                const jobToRestore = jobs.archivedJobs.find(j => j.id === jobId);
+                if (jobToRestore) {
+                    const restoredJob = { ...jobToRestore, status: null };
+                    setJobs(prev => ({
+                        ...prev,
+                        archivedJobs: prev.archivedJobs.filter((j: any) => j.id !== jobId),
+                        strongMatches: [restoredJob, ...prev.strongMatches]
+                    }));
                 }
             }
         } catch (error) {
@@ -189,6 +240,11 @@ export default function DashboardPage() {
                             className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'applied' ? 'border-green-500 text-green-600 dark:text-green-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
                             ✅ Applied ({jobs.appliedJobs.length})
                         </button>
+                        <button
+                            onClick={() => setActiveTab('archived')}
+                            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'archived' ? 'border-red-500 text-red-600 dark:text-red-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                            🗄️ Archived ({jobs.archivedJobs.length})
+                        </button>
                     </div>
                     <div className="relative w-full sm:w-64 pb-2 sm:pb-0">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none pb-2 sm:pb-0">
@@ -220,6 +276,45 @@ export default function DashboardPage() {
                             {activeTab === 'all' && filterJobs(jobs.otherJobs).map(j => renderJobCard(j, false))}
                             {activeTab === 'applied' && filterJobs(jobs.appliedJobs).map(j => renderJobCard(j, false))}
 
+                            {/* Archived Job Cards with Restore & Delete */}
+                            {activeTab === 'archived' && filterJobs(jobs.archivedJobs).map((job: any) => (
+                                <div key={job.id} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-red-200 dark:border-red-900/50 hover:shadow-md transition-shadow opacity-80">
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div>
+                                            <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{job.title}</h3>
+                                            <p className="text-gray-500 dark:text-gray-400 font-medium">{job.company} • {job.location || 'Remote/Unknown'}</p>
+                                        </div>
+                                        <div className="px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                            Archived
+                                        </div>
+                                    </div>
+                                    <p className="text-gray-600 dark:text-gray-300 text-sm line-clamp-3 mb-6">
+                                        {job.description}
+                                    </p>
+                                    <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                                        <div className="flex gap-2">
+                                            <button onClick={() => handleUnarchive(job.id)} className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-blue-100 hover:bg-blue-200 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-400 transition flex items-center gap-1">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"></path></svg>
+                                                Restore
+                                            </button>
+                                            <button onClick={() => handleDeleteJob(job.id)} className="px-3 py-1.5 text-sm font-semibold rounded-lg bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-900/30 dark:hover:bg-red-900/50 dark:text-red-400 transition flex items-center gap-1">
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                                Delete Forever
+                                            </button>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">
+                                                Match: {(job.match_score * 100).toFixed(0)}%
+                                            </span>
+                                            <a href={job.url} target="_blank" rel="noopener noreferrer"
+                                                className="px-5 py-2 bg-gray-500 text-white rounded-lg font-bold text-sm hover:scale-105 transition-transform shadow-sm">
+                                                View Job
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+
                             {(activeTab === 'high' && filterJobs(jobs.highMatches).length === 0) && (
                                 <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
                                     <span className="text-4xl mb-4">🤷‍♂️</span>
@@ -245,6 +340,13 @@ export default function DashboardPage() {
                                 <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
                                     <span className="text-4xl mb-4">💼</span>
                                     <p className="text-gray-500 dark:text-gray-400">You haven't sent any applications yet. Go get 'em!</p>
+                                </div>
+                            )}
+
+                            {(activeTab === 'archived' && filterJobs(jobs.archivedJobs).length === 0) && (
+                                <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
+                                    <span className="text-4xl mb-4">✨</span>
+                                    <p className="text-gray-500 dark:text-gray-400">No archived jobs. Your feed is clean!</p>
                                 </div>
                             )}
                         </div>
