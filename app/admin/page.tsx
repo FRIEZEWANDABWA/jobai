@@ -214,8 +214,9 @@ export default function AdminPage() {
                             <label className="block text-xs font-medium text-gray-500 mb-1">Velocity Priority</label>
                             <select value={newSourcePriority} onChange={e => setNewSourcePriority(Number(e.target.value))} className="w-full rounded-md border border-gray-300 dark:border-gray-600 px-3 py-2 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-blue-500 text-sm">
                                 <option value={1}>Tier 1 (Hourly)</option>
-                                <option value={2}>Tier 2 (2 Hours)</option>
-                                <option value={3}>Tier 3 (3 Hours)</option>
+                                <option value={2}>Tier 2 (6 Hours)</option>
+                                <option value={3}>Tier 3 (12 Hours)</option>
+                                <option value={4}>Tier 4 (Daily)</option>
                             </select>
                         </div>
                         <div className="lg:col-span-1 flex items-end">
@@ -243,6 +244,7 @@ export default function AdminPage() {
                                 <option value="1">Tier 1 Only</option>
                                 <option value="2">Tier 2 Only</option>
                                 <option value="3">Tier 3 Only</option>
+                                <option value="4">Tier 4 Only</option>
                             </select>
                         </div>
                         <button

@@ -29,6 +29,7 @@ export async function POST(request: Request) {
             if (priority === 1 && diffMins >= 50) return true; // ~1 hour
             if (priority === 2 && diffMins >= 350) return true; // ~6 hours
             if (priority === 3 && diffMins >= 710) return true; // ~12 hours
+            if (priority === 4 && diffMins >= 1430) return true; // ~24 hours
 
             return false;
         });
