@@ -16,9 +16,8 @@ create table system_settings (
   updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
--- Insert default thresholds
 insert into system_settings (key, value, description) values
-  ('notify_threshold', '0.85', 'Minimum score to trigger email/Telegram notifications'),
+  ('notify_threshold', '0.80', 'Minimum score to trigger email/Telegram notifications'),
   ('dashboard_threshold', '0.70', 'Minimum score to show on the dashboard');
 
 -- 3. Users and Profiles (Ready for multi-user, currently single admin)
