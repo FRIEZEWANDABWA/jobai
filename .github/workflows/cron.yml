@@ -1,0 +1,22 @@
+name: Scheduled AI Job Ingestion and Matching
+on:
+  schedule:
+    - cron: '0 * * * *' # Run exactly at the top of every single hour
+  workflow_dispatch: # Allows manual trigger from GitHub UI for testing
+
+jobs:
+  run-ingestion-and-matching:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Job Ingestion Webhook
+        run: |
+          curl -i -X POST https://jobmakerai.vercel.app/api/cron/ingest \
+          -H "Authorization: Bearer HakunaMatata2026-SuperSafeSecretKey!"
+          
+      - name: Sleep to allow DB propagation
+        run: sleep 10
+        
+      - name: Trigger AI Matching Webhook
+        run: |
+          curl -i -X POST https://jobmakerai.vercel.app/api/cron/match \
+          -H "Authorization: Bearer HakunaMatata2026-SuperSafeSecretKey!"
