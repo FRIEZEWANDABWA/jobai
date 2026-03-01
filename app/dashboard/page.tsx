@@ -220,15 +220,33 @@ export default function DashboardPage() {
                             {activeTab === 'all' && filterJobs(jobs.otherJobs).map(j => renderJobCard(j, false))}
                             {activeTab === 'applied' && filterJobs(jobs.appliedJobs).map(j => renderJobCard(j, false))}
 
-                            {((activeTab === 'high' && filterJobs(jobs.highMatches).length === 0) ||
-                                (activeTab === 'strong' && filterJobs(jobs.strongMatches).length === 0) ||
-                                (activeTab === 'all' && filterJobs(jobs.otherJobs).length === 0) ||
-                                (activeTab === 'applied' && filterJobs(jobs.appliedJobs).length === 0)) && (
-                                    <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
-                                        <span className="text-4xl mb-4">🤷‍♂️</span>
-                                        <p className="text-gray-500 dark:text-gray-400">No jobs match your criteria right now.</p>
-                                    </div>
-                                )}
+                            {(activeTab === 'high' && filterJobs(jobs.highMatches).length === 0) && (
+                                <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
+                                    <span className="text-4xl mb-4">🤷‍♂️</span>
+                                    <p className="text-gray-500 dark:text-gray-400">No high match jobs found yet. Check back later!</p>
+                                </div>
+                            )}
+
+                            {(activeTab === 'strong' && filterJobs(jobs.strongMatches).length === 0) && (
+                                <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
+                                    <span className="text-4xl mb-4">🤷‍♂️</span>
+                                    <p className="text-gray-500 dark:text-gray-400">No strong match jobs found yet.</p>
+                                </div>
+                            )}
+
+                            {(activeTab === 'all' && filterJobs(jobs.otherJobs).length === 0) && (
+                                <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
+                                    <span className="text-4xl mb-4">🤷‍♂️</span>
+                                    <p className="text-gray-500 dark:text-gray-400">No jobs in your feed right now.</p>
+                                </div>
+                            )}
+
+                            {(activeTab === 'applied' && filterJobs(jobs.appliedJobs).length === 0) && (
+                                <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
+                                    <span className="text-4xl mb-4">💼</span>
+                                    <p className="text-gray-500 dark:text-gray-400">You haven't sent any applications yet. Go get 'em!</p>
+                                </div>
+                            )}
                         </div>
 
                         {/* Right Column: Trending Skills Widget */}
