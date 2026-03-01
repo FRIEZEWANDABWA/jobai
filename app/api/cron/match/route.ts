@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { generateEmbedding } from '@/lib/openai';
 import { sendEmailNotification, sendTelegramNotification } from '@/lib/notifier';
+import { calculateTitleBoost } from '@/lib/title-boost';
 
 // Basic vector dot product assuming normalized embeddings for cosine similarity
 function cosineSimilarity(vecA: number[] | string, vecB: number[] | string) {
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
         // For this tier, we fetch the jobs and do it in Next.js Serverless.
         const { data: recentJobs } = await supabase
             .from('jobs')
-            .select('id, title, company, url, embedding')
+            .select('id, title, company, url, description, embedding')
             .in('id', jobsToEmbed.map(j => j.id));
 
         let highMatches = 0;
@@ -75,7 +76,9 @@ export async function POST(request: Request) {
         for (const job of recentJobs || []) {
             if (!job.embedding) continue;
 
-            const score = cosineSimilarity(user.cv_embedding, job.embedding);
+            const baseScore = cosineSimilarity(user.cv_embedding, job.embedding);
+            const titleBoost = calculateTitleBoost(job.title, job.description || '');
+            const score = Math.min(baseScore + titleBoost, 1.0);
 
             // Save score
             await supabase.from('match_scores').upsert({
@@ -87,7 +90,7 @@ export async function POST(request: Request) {
             // Prepare notification if high match
             if (score >= notifyThreshold) {
                 highMatches++;
-                console.log(`🔥 HIGH MATCH (${(score * 100).toFixed(1)}%): ${job.title} at ${job.company}`);
+                console.log(`🔥 HIGH MATCH (${(score * 100).toFixed(1)}%) [base: ${(baseScore * 100).toFixed(1)}% + boost: ${(titleBoost * 100).toFixed(1)}%]: ${job.title} at ${job.company}`);
 
                 // Check if we already notified for this job to prevent spam
                 const { data: existingNotif } = await supabase
