@@ -4,28 +4,12 @@ import { supabase } from '@/lib/supabase';
 export async function GET() {
     const newSources = [
         {
-            name: 'CareerJet IT Manager',
-            base_url: 'https://www.careerjet.co.ke/jobs?s=IT+Manager&l=Nairobi&radius=25&ct=p&cp=f&cmp=&sort=date',
+            name: 'Eagle HR Consultants',
+            base_url: 'https://www.eaglehr.co.ke/careers',
             type: 'html',
-            category: 'IT Management',
+            category: 'Recruitment',
             active: true,
-            parsing_config: { priority_level: 1, site_url: 'https://www.careerjet.co.ke' }
-        },
-        {
-            name: 'CareerJet IT',
-            base_url: 'https://www.careerjet.co.ke/jobs?s=IT&l=Nairobi',
-            type: 'html',
-            category: 'IT',
-            active: true,
-            parsing_config: { priority_level: 1, site_url: 'https://www.careerjet.co.ke' }
-        },
-        {
-            name: 'CareerJet InfoTech',
-            base_url: 'https://www.careerjet.co.ke/jobs?s=information+technology&l=Nairobi',
-            type: 'html',
-            category: 'IT',
-            active: true,
-            parsing_config: { priority_level: 1, site_url: 'https://www.careerjet.co.ke' }
+            parsing_config: { priority_level: 1, site_url: 'https://www.eaglehr.co.ke' }
         }
     ];
 
