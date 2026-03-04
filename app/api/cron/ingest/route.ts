@@ -63,8 +63,34 @@ export async function POST(request: Request) {
             // Update last run time regardless of whether new jobs were found
             await supabase.from('job_sources').update({ last_run_at: new Date().toISOString() }).eq('id', source.id);
         }
+        // 4. AUTO-CLEANUP: Delete archived jobs older than 5 days
+        const fiveDaysAgo = new Date();
+        fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+        const fiveDaysAgoIso = fiveDaysAgo.toISOString();
 
-        return NextResponse.json({ success: true, message: `Ingestion complete. ${totalIngested} new jobs added.` });
+        // Find archived (rejected) applications older than 5 days
+        const { data: staleApps } = await supabase
+            .from('applications')
+            .select('job_id')
+            .eq('status', 'rejected')
+            .lt('applied_at', fiveDaysAgoIso);
+
+        let cleaned = 0;
+        if (staleApps && staleApps.length > 0) {
+            const staleJobIds = staleApps.map(a => a.job_id);
+
+            for (const jobId of staleJobIds) {
+                // Delete related rows first (foreign key constraints)
+                await supabase.from('notifications').delete().eq('job_id', jobId);
+                await supabase.from('applications').delete().eq('job_id', jobId);
+                await supabase.from('match_scores').delete().eq('job_id', jobId);
+                await supabase.from('jobs').delete().eq('id', jobId);
+                cleaned++;
+            }
+            console.log(`🧹 Auto-cleaned ${cleaned} archived jobs older than 5 days`);
+        }
+
+        return NextResponse.json({ success: true, message: `Ingestion complete. ${totalIngested} new jobs added. ${cleaned} stale archived jobs cleaned.` });
     } catch (error: any) {
         console.error('Ingestion Error:', error);
         return NextResponse.json({ success: false, error: error.message || 'Internal Server Error' }, { status: 500 });
