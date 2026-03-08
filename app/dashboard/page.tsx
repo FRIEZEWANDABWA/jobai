@@ -7,8 +7,12 @@ export default function DashboardPage() {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'high' | 'strong' | 'all' | 'applied' | 'archived'>('high');
     const [searchQuery, setSearchQuery] = useState('');
-
+    const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
     const [velocity, setVelocity] = useState({ jobsFound: 0, highMatches: 0, applicationsSent: 0, conversionRate: 0 });
+
+    useEffect(() => {
+        setSelectedJobs([]);
+    }, [activeTab]);
 
     useEffect(() => {
         // In a real app, userId comes from Auth Session context
@@ -22,9 +26,36 @@ export default function DashboardPage() {
             if (!jobsData.error) setJobs(jobsData);
             if (!skillsData.error && Array.isArray(skillsData)) setSkills(skillsData);
             if (!velocityData.error) setVelocity(velocityData);
-        })
-            .finally(() => setLoading(false));
+        }).finally(() => setLoading(false));
     }, []);
+
+    const handleBatchAction = async (action: 'applied' | 'rejected' | 'unarchive' | 'delete') => {
+        if (!selectedJobs.length) return;
+        if (action === 'delete') {
+            if (!confirm(`⚠️ Permanently delete ${selectedJobs.length} jobs? This cannot be undone.`)) return;
+        }
+        try {
+            const res = await fetch('/api/applications/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action, jobIds: selectedJobs })
+            });
+
+            if (res.ok) {
+                // Refresh data
+                const mockUserId = "00000000-0000-0000-0000-000000000000";
+                const [jobsData, velocityData] = await Promise.all([
+                    fetch(`/api/jobs?userId=${mockUserId}`).then(r => r.json()),
+                    fetch(`/api/velocity?userId=${mockUserId}`).then(r => r.json())
+                ]);
+                if (!jobsData.error) setJobs(jobsData);
+                if (!velocityData.error) setVelocity(velocityData);
+                setSelectedJobs([]);
+            }
+        } catch (error) {
+            console.error(error);
+        }
+    };
 
     const handleUpdateStatus = async (jobId: string, status: string) => {
         try {
@@ -127,13 +158,24 @@ export default function DashboardPage() {
     };
 
     const renderJobCard = (job: any, isHigh: boolean = false) => (
-        <div key={job.id} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-shadow">
-            <div className="flex justify-between items-start mb-4">
-                <div>
-                    <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{job.title}</h3>
-                    <p className="text-gray-500 dark:text-gray-400 font-medium">{job.company} • {job.location || 'Remote/Unknown'}</p>
+        <div key={job.id} className={`p-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border transition-shadow ${selectedJobs.includes(job.id) ? 'border-blue-500 ring-1 ring-blue-500' : 'border-gray-100 dark:border-gray-700 hover:shadow-md'}`}>
+            <div className="flex justify-between items-start mb-4 gap-4">
+                <div className="flex items-start gap-3">
+                    <input
+                        type="checkbox"
+                        checked={selectedJobs.includes(job.id)}
+                        onChange={(e) => {
+                            if (e.target.checked) setSelectedJobs(prev => [...prev, job.id]);
+                            else setSelectedJobs(prev => prev.filter(id => id !== job.id));
+                        }}
+                        className="mt-1.5 w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 shrink-0 cursor-pointer"
+                    />
+                    <div>
+                        <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{job.title}</h3>
+                        <p className="text-gray-500 dark:text-gray-400 font-medium">{job.company} • {job.location || 'Remote/Unknown'}</p>
+                    </div>
                 </div>
-                <div className={`px-3 py-1 rounded-full text-sm font-bold ${isHigh ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
+                <div className={`px-3 py-1 rounded-full text-sm font-bold shrink-0 ${isHigh ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'}`}>
                     Match: {(job.match_score * 100).toFixed(0)}%
                 </div>
             </div>
@@ -246,17 +288,40 @@ export default function DashboardPage() {
                             🗄️ Archived ({jobs.archivedJobs.length})
                         </button>
                     </div>
-                    <div className="relative w-full sm:w-64 pb-2 sm:pb-0">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none pb-2 sm:pb-0">
-                            <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                    <div className="flex items-center gap-3 w-full sm:w-auto pb-2 sm:pb-0">
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="checkbox"
+                                id="selectAll"
+                                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                onChange={(e) => {
+                                    if (e.target.checked) {
+                                        let currentList: any[] = [];
+                                        if (activeTab === 'high') currentList = filterJobs(jobs.highMatches);
+                                        if (activeTab === 'strong') currentList = filterJobs(jobs.strongMatches);
+                                        if (activeTab === 'all') currentList = filterJobs(jobs.otherJobs);
+                                        if (activeTab === 'applied') currentList = filterJobs(jobs.appliedJobs);
+                                        if (activeTab === 'archived') currentList = filterJobs(jobs.archivedJobs);
+                                        setSelectedJobs(currentList.map(j => j.id));
+                                    } else {
+                                        setSelectedJobs([]);
+                                    }
+                                }}
+                            />
+                            <label htmlFor="selectAll" className="text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">Select All</label>
                         </div>
-                        <input
-                            type="text"
-                            placeholder="Filter jobs..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg leading-5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
-                        />
+                        <div className="relative flex-1 sm:w-64">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg className="h-4 w-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            </div>
+                            <input
+                                type="text"
+                                placeholder="Filter jobs..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="block w-full pl-10 pr-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg leading-5 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-blue-500 sm:text-sm"
+                            />
+                        </div>
                     </div>
                 </div>
 
@@ -278,13 +343,24 @@ export default function DashboardPage() {
 
                             {/* Archived Job Cards with Restore & Delete */}
                             {activeTab === 'archived' && filterJobs(jobs.archivedJobs).map((job: any) => (
-                                <div key={job.id} className="p-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-red-200 dark:border-red-900/50 hover:shadow-md transition-shadow opacity-80">
-                                    <div className="flex justify-between items-start mb-4">
-                                        <div>
-                                            <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{job.title}</h3>
-                                            <p className="text-gray-500 dark:text-gray-400 font-medium">{job.company} • {job.location || 'Remote/Unknown'}</p>
+                                <div key={job.id} className={`p-6 bg-white dark:bg-gray-800 rounded-xl shadow-sm border hover:shadow-md transition-shadow opacity-80 ${selectedJobs.includes(job.id) ? 'border-red-500 ring-1 ring-red-500' : 'border-red-200 dark:border-red-900/50'}`}>
+                                    <div className="flex justify-between items-start mb-4 gap-4">
+                                        <div className="flex items-start gap-3">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedJobs.includes(job.id)}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) setSelectedJobs(prev => [...prev, job.id]);
+                                                    else setSelectedJobs(prev => prev.filter(id => id !== job.id));
+                                                }}
+                                                className="mt-1.5 w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-500 shrink-0 cursor-pointer"
+                                            />
+                                            <div>
+                                                <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{job.title}</h3>
+                                                <p className="text-gray-500 dark:text-gray-400 font-medium">{job.company} • {job.location || 'Remote/Unknown'}</p>
+                                            </div>
                                         </div>
-                                        <div className="px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                                        <div className="px-3 py-1 rounded-full text-sm font-bold bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 shrink-0">
                                             Archived
                                         </div>
                                     </div>
@@ -377,6 +453,29 @@ export default function DashboardPage() {
                                 </div>
                             </div>
                         )}
+                    </div>
+                )}
+
+                {/* Floating Bulk Actions */}
+                {selectedJobs.length > 0 && (
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-900 dark:bg-white text-white dark:text-black py-3 px-6 rounded-2xl shadow-2xl flex items-center gap-4 z-50">
+                        <span className="font-bold">{selectedJobs.length} selected</span>
+                        <div className="h-6 w-px bg-gray-600 dark:bg-gray-300"></div>
+                        <div className="flex gap-2">
+                            {activeTab !== 'archived' && (
+                                <>
+                                    <button onClick={() => handleBatchAction('applied')} className="px-3 py-1.5 hover:bg-gray-700 dark:hover:bg-gray-100 rounded-lg text-sm font-semibold transition">Mark Applied</button>
+                                    <button onClick={() => handleBatchAction('rejected')} className="px-3 py-1.5 hover:bg-gray-700 dark:hover:bg-gray-100 rounded-lg text-sm font-semibold transition">Archive</button>
+                                </>
+                            )}
+                            {activeTab === 'archived' && (
+                                <button onClick={() => handleBatchAction('unarchive')} className="px-3 py-1.5 hover:bg-gray-700 dark:hover:bg-gray-100 rounded-lg text-sm font-semibold transition">Restore</button>
+                            )}
+                            <button onClick={() => handleBatchAction('delete')} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold transition flex items-center gap-1">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                Delete
+                            </button>
+                        </div>
                     </div>
                 )}
             </div>

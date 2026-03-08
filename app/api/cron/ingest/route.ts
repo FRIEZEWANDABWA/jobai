@@ -63,34 +63,82 @@ export async function POST(request: Request) {
             // Update last run time regardless of whether new jobs were found
             await supabase.from('job_sources').update({ last_run_at: new Date().toISOString() }).eq('id', source.id);
         }
-        // 4. AUTO-CLEANUP: Delete archived jobs older than 5 days
-        const fiveDaysAgo = new Date();
-        fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
-        const fiveDaysAgoIso = fiveDaysAgo.toISOString();
-
-        // Find archived (rejected) applications older than 5 days
-        const { data: staleApps } = await supabase
-            .from('applications')
-            .select('job_id')
-            .eq('status', 'rejected')
-            .lt('applied_at', fiveDaysAgoIso);
+        // 4. AUTO-CLEANUP: Run cleanup only once per day
+        const todayStr = new Date().toISOString().split('T')[0];
+        const { data: settings } = await supabase.from('system_settings').select('key, value').eq('key', 'last_cleanup_date').single();
 
         let cleaned = 0;
-        if (staleApps && staleApps.length > 0) {
-            const staleJobIds = staleApps.map(a => a.job_id);
+        let activeCleaned = 0;
 
-            for (const jobId of staleJobIds) {
-                // Delete related rows first (foreign key constraints)
-                await supabase.from('notifications').delete().eq('job_id', jobId);
-                await supabase.from('applications').delete().eq('job_id', jobId);
-                await supabase.from('match_scores').delete().eq('job_id', jobId);
-                await supabase.from('jobs').delete().eq('id', jobId);
-                cleaned++;
+        if (!settings || settings.value !== todayStr) {
+            console.log(`Running daily cleanup for ${todayStr}...`);
+
+            // Delete archived jobs older than 5 days
+            const fiveDaysAgo = new Date();
+            fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 5);
+            const fiveDaysAgoIso = fiveDaysAgo.toISOString();
+
+            // Find archived (rejected) applications older than 5 days
+            const { data: staleApps } = await supabase
+                .from('applications')
+                .select('job_id')
+                .eq('status', 'rejected')
+                .lt('applied_at', fiveDaysAgoIso);
+
+            if (staleApps && staleApps.length > 0) {
+                const staleJobIds = staleApps.map(a => a.job_id);
+
+                // Thanks to ON DELETE CASCADE on the DB, deleting the job automatically cleans relations
+                const { error } = await supabase.from('jobs').delete().in('id', staleJobIds);
+
+                if (!error) {
+                    cleaned = staleJobIds.length;
+                    console.log(`🧹 Auto-cleaned ${cleaned} archived jobs older than 5 days`);
+                } else {
+                    console.error('Error auto-cleaning archived jobs:', error);
+                }
             }
-            console.log(`🧹 Auto-cleaned ${cleaned} archived jobs older than 5 days`);
+
+            // 5. AUTO-CLEANUP ACTIVE JOBS: Delete unapplied jobs older than 4 days
+            const fourDaysAgo = new Date();
+            fourDaysAgo.setDate(fourDaysAgo.getDate() - 4);
+            const fourDaysAgoIso = fourDaysAgo.toISOString();
+
+            const { data: oldJobs } = await supabase
+                .from('jobs')
+                .select(`
+                    id,
+                    applications ( id )
+                `)
+                .lt('created_at', fourDaysAgoIso);
+
+            if (oldJobs && oldJobs.length > 0) {
+                const unappliedOldJobs = oldJobs.filter(j => !j.applications || (Array.isArray(j.applications) && j.applications.length === 0));
+
+                if (unappliedOldJobs.length > 0) {
+                    const unappliedJobIds = unappliedOldJobs.map(j => j.id);
+                    const { error } = await supabase.from('jobs').delete().in('id', unappliedJobIds);
+
+                    if (!error) {
+                        activeCleaned = unappliedJobIds.length;
+                        console.log(`🧹 Auto-cleaned ${activeCleaned} active unapplied jobs older than 4 days`);
+                    } else {
+                        console.error('Error auto-cleaning active jobs:', error);
+                    }
+                }
+            }
+
+            // Update the last cleanup date
+            if (settings) {
+                await supabase.from('system_settings').update({ value: todayStr }).eq('key', 'last_cleanup_date');
+            } else {
+                await supabase.from('system_settings').insert({ key: 'last_cleanup_date', value: todayStr });
+            }
+        } else {
+            console.log(`Daily cleanup already ran for ${todayStr}, skipping.`);
         }
 
-        return NextResponse.json({ success: true, message: `Ingestion complete. ${totalIngested} new jobs added. ${cleaned} stale archived jobs cleaned.` });
+        return NextResponse.json({ success: true, message: `Ingestion complete. ${totalIngested} new jobs added. ${cleaned} stale archived jobs cleaned. ${activeCleaned} stale active jobs cleaned.` });
     } catch (error: any) {
         console.error('Ingestion Error:', error);
         return NextResponse.json({ success: false, error: error.message || 'Internal Server Error' }, { status: 500 });
