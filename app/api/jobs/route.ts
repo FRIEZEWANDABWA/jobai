@@ -35,7 +35,7 @@ export async function GET(request: Request) {
         // Fetch system_settings
         const { data: settings } = await supabase.from('system_settings').select('key, value');
         const dashThreshold = parseFloat(settings?.find(s => s.key === 'dashboard_threshold')?.value || '0.70');
-        const notifyThreshold = parseFloat(settings?.find(s => s.key === 'notify_threshold')?.value || '0.85');
+        const notifyThreshold = parseFloat(settings?.find(s => s.key === 'notify_threshold')?.value || '0.80');
 
         // Categorize jobs
         const formattedJobs = jobs?.map(job => {

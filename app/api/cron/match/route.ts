@@ -20,7 +20,7 @@ export async function POST(request: Request) {
     try {
         // 1. Fetch system thresholds
         const { data: settings } = await supabase.from('system_settings').select('key, value');
-        const notifyThreshold = parseFloat(settings?.find(s => s.key === 'notify_threshold')?.value || '0.85');
+        const notifyThreshold = parseFloat(settings?.find(s => s.key === 'notify_threshold')?.value || '0.80');
 
         // 2. Fetch jobs where `embedding IS NULL`
         // Rate Limiting (Lightweight): Process max 50 at a time to avoid OpenAI burst overages

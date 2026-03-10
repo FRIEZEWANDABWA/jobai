@@ -39,7 +39,17 @@ export async function POST(request: Request) {
 
         // 3. Iterate and scrape
         for (const source of sourcesToRun) {
-            const jobs = await scrapeSource(source);
+            // Fetch recent hashes to prevent scraping beyond what's known
+            const { data: existingJobs } = await supabase
+                .from('jobs')
+                .select('dedupe_hash')
+                .eq('source_id', source.id)
+                .order('created_at', { ascending: false })
+                .limit(1000);
+            
+            const existingHashes = new Set(existingJobs?.map((j: { dedupe_hash: string }) => j.dedupe_hash) || []);
+
+            const jobs = await scrapeSource(source, existingHashes);
             if (jobs.length > 0) {
                 // 3. Upsert to / insert ignoring duplicates using raw SQL if needed,
                 // or rely on unique constraints in supabase
