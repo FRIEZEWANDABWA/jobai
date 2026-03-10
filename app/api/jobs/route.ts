@@ -27,7 +27,8 @@ export async function GET(request: Request) {
          match_scores!inner(score),
          applications(status)
        `)
-            .eq('match_scores.user_id', userId);
+            .eq('match_scores.user_id', userId)
+            .order('created_at', { ascending: false });
 
         if (error) throw error;
 
