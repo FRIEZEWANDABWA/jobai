@@ -37,7 +37,7 @@ create table job_sources (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   base_url text not null,
-  type text not null check (type in ('rss', 'api', 'html')),
+  type text not null check (type in ('rss', 'api', 'html', 'google')),
   category text not null default 'Other', -- e.g., 'NGO', 'Corporate', 'Government', 'Tech', 'Remote'
   parsing_config jsonb, -- JSON rules for scraping (e.g., selectors)
   active boolean default true,

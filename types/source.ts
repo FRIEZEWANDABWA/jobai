@@ -13,7 +13,7 @@ export interface JobSource {
     id: string; // uuid
     name: string;
     base_url: string;
-    type: 'rss' | 'api' | 'html';
+    type: 'rss' | 'api' | 'html' | 'google';
     category: string;
     parsing_config: any | null; // JSON config
     active: boolean;

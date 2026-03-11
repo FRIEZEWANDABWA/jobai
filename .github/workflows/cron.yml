@@ -10,13 +10,14 @@ jobs:
     steps:
       - name: Trigger Job Ingestion Webhook
         run: |
-          curl -i -X POST https://jobmakerai.vercel.app/api/cron/ingest \
-          -H "Authorization: Bearer HakunaMatata2026-SuperSafeSecretKey!"
+          curl -i -X POST ${{ secrets.PRODUCTION_URL }}/api/cron/ingest \
+          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
           
       - name: Sleep to allow DB propagation
         run: sleep 10
         
       - name: Trigger AI Matching Webhook
         run: |
-          curl -i -X POST https://jobmakerai.vercel.app/api/cron/match \
-          -H "Authorization: Bearer HakunaMatata2026-SuperSafeSecretKey!"
+          curl -i -X POST ${{ secrets.PRODUCTION_URL }}/api/cron/match \
+          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+

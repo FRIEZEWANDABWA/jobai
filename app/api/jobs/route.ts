@@ -25,7 +25,8 @@ export async function GET(request: Request) {
             .select(`
          *,
          match_scores!inner(score),
-         applications(status)
+         applications(status),
+         job_sources(type)
        `)
             .eq('match_scores.user_id', userId)
             .order('created_at', { ascending: false });
@@ -49,7 +50,9 @@ export async function GET(request: Request) {
                 status = (job.applications as any).status;
             }
 
-            return { ...job, match_score: score, status };
+            const sourceType = job.job_sources ? (Array.isArray(job.job_sources) ? job.job_sources[0]?.type : (job.job_sources as any).type) : null;
+
+            return { ...job, match_score: score, status, type: sourceType };
         }).sort((a, b) => b.match_score - a.match_score) || [];
 
         const archivedJobs = formattedJobs.filter(j => j.status === 'rejected');
@@ -57,11 +60,12 @@ export async function GET(request: Request) {
         const unappliedJobs = activeJobs.filter(j => !['applied', 'interviewing', 'offer'].includes(j.status));
         const appliedJobs = activeJobs.filter(j => ['applied', 'interviewing', 'offer'].includes(j.status));
 
-        const highMatches = unappliedJobs.filter(j => j.match_score >= notifyThreshold);
-        const strongMatches = unappliedJobs.filter(j => j.match_score >= dashThreshold && j.match_score < notifyThreshold);
-        const otherJobs = unappliedJobs.filter(j => j.match_score < dashThreshold);
+        const highMatches = unappliedJobs.filter(j => j.match_score >= notifyThreshold && j.type !== 'google');
+        const strongMatches = unappliedJobs.filter(j => j.match_score >= dashThreshold && j.match_score < notifyThreshold && j.type !== 'google');
+        const googleJobs = unappliedJobs.filter(j => j.type === 'google');
+        const otherJobs = unappliedJobs.filter(j => j.match_score < dashThreshold && j.type !== 'google');
 
-        return NextResponse.json({ highMatches, strongMatches, otherJobs, appliedJobs, archivedJobs });
+        return NextResponse.json({ highMatches, strongMatches, googleJobs, otherJobs, appliedJobs, archivedJobs });
     } catch (error: any) {
         console.error('Fetch Jobs Error:', error);
         return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
