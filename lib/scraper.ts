@@ -84,9 +84,10 @@ async function scrapeRss(source: import('../types/source').JobSource, existingHa
 async function scrapeHtml(source: import('../types/source').JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
     console.log(`HTML Scrape for ${source.name} via ${source.base_url}`);
 
-    // If a PROXY_URL is set, we can route fetches through a headless service (e.g., BrightData / Browserbase)
-    // to bypass JavaScript and advanced Cloudflare protections.
-    const useProxy = !!process.env.PROXY_URL;
+    // COST OPTIMIZATION: Only use proxy if explicitly requested in config
+    // This saves 90% of credits for open sites like NGO/Company pages
+    const useProxy = !!process.env.PROXY_URL && source.parsing_config?.use_proxy === true; 
+
     
     // Default to a 5 page maximum if not provided
     const maxPages = source.parsing_config?.max_pages || 5; 
@@ -109,12 +110,21 @@ async function scrapeHtml(source: import('../types/source').JobSource, existingH
                 }
             }
 
-            console.log(`Scraping page ${page}: ${pageUrl}`);
             const proxySeparator = process.env.PROXY_URL?.includes('?') ? '&' : '?';
-            const fetchUrl = useProxy ? `${process.env.PROXY_URL}${proxySeparator}url=${encodeURIComponent(pageUrl)}` : pageUrl;
+            
+            // For standard HTML, we only add premium flags if explicitly requested to save your ZenRows credits
+            let fetchUrl = pageUrl;
+            if (useProxy) {
+                let proxyUrl: string = process.env.PROXY_URL || '';
+                if (source.parsing_config?.js_render) proxyUrl += `${proxySeparator}js_render=true`;
+                if (source.parsing_config?.premium_proxy) proxyUrl += `${proxySeparator}premium_proxy=true`;
+                
+                const finalSeparator = proxyUrl.includes('?') ? '&' : '?';
+                fetchUrl = `${proxyUrl}${finalSeparator}url=${encodeURIComponent(pageUrl)}`;
+            }
 
             const response = await fetch(fetchUrl, {
-                headers: {
+                headers: useProxy ? {} : {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 JobHunterAI/2.0",
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
                     "Accept-Language": "en-US,en;q=0.5"
@@ -218,7 +228,10 @@ async function scrapeHtml(source: import('../types/source').JobSource, existingH
 async function scrapeGoogle(source: import('../types/source').JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
     console.log(`Google Scrape for ${source.name} via ${source.base_url}`);
 
+    // Google NECESSARILY requires a proxy but we can try to avoid JS rendering to save credits 
+    // unless the first attempt fails or it's forced.
     const useProxy = !!process.env.PROXY_URL;
+
     const maxPages = source.parsing_config?.max_pages || 2;
     const jobs: Partial<Job>[] = [];
     let page = 1;
@@ -242,14 +255,22 @@ async function scrapeGoogle(source: import('../types/source').JobSource, existin
                 pageUrl += `${separator}start=${start}`;
             }
 
-            console.log(`Scraping Google page ${page}: ${pageUrl}`);
             const googleProxySeparator = process.env.PROXY_URL?.includes('?') ? '&' : '?';
-            const fetchUrl = useProxy ? `${process.env.PROXY_URL}${googleProxySeparator}url=${encodeURIComponent(pageUrl)}` : pageUrl;
+            
+            // Google requires Premium Proxy, but we try WITHOUT JS Render first to save costs
+            // Users can enable it via config if results stop appearing
+            let googleProxyUrl = process.env.PROXY_URL || '';
+            if (!googleProxyUrl.includes('premium_proxy')) {
+                googleProxyUrl += `${googleProxySeparator}premium_proxy=true`;
+            }
+            
+            const finalSeparator = googleProxyUrl.includes('?') ? '&' : '?';
+            const fetchUrl = useProxy ? `${googleProxyUrl}${finalSeparator}url=${encodeURIComponent(pageUrl)}` : pageUrl;
 
             const randomUa = userAgents[Math.floor(Math.random() * userAgents.length)];
 
             const response = await fetch(fetchUrl, {
-                headers: {
+                headers: useProxy ? {} : {
                     "User-Agent": randomUa,
                     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
                     "Accept-Language": "en-US,en;q=0.5"

@@ -10,35 +10,47 @@ export async function POST(request: Request) {
 
     try {
         // 1. Fetch active Job Sources
-        const { data: sources, error: sourceError } = await supabase
+        // 1. Fetch active Job Sources that are due for a run
+        const now = new Date();
+        const { data: allSources, error: sourceError } = await supabase
             .from('job_sources')
             .select('*')
             .eq('active', true);
 
         if (sourceError) throw sourceError;
-        if (!sources || sources.length === 0) return NextResponse.json({ message: 'No active sources' });
+        if (!allSources || allSources.length === 0) return NextResponse.json({ message: 'No active sources' });
 
-        // 2. Filter sources by Priority Tier (Tier 1: Hourly, Tier 2: 2hrs, Tier 3: 3hrs)
-        const now = new Date();
-        const sourcesToRun = sources.filter(source => {
+        // 2. Filter sources by Priority Tier, but ONLY pick the MOST overdue one to prevent Vercel 504 timeout
+        const sourcesToRun = allSources.filter(source => {
             const priority = source.parsing_config?.priority_level || 1;
-            if (!source.last_run_at) return true; // Never run before
+            if (!source.last_run_at) return true; 
 
             const diffMins = (now.getTime() - new Date(source.last_run_at).getTime()) / (1000 * 60);
 
-            if (priority === 1 && diffMins >= 50) return true; // ~1 hour
-            if (priority === 2 && diffMins >= 350) return true; // ~6 hours
-            if (priority === 3 && diffMins >= 710) return true; // ~12 hours
-            if (priority === 4 && diffMins >= 1430) return true; // ~24 hours
+            if (priority === 1 && diffMins >= 50) return true;
+            if (priority === 2 && diffMins >= 350) return true;
+            if (priority === 3 && diffMins >= 710) return true;
+            if (priority === 4 && diffMins >= 1430) return true;
 
             return false;
+        }).sort((a, b) => {
+            // Pick the one that ran the longest time ago
+            const dateA = a.last_run_at ? new Date(a.last_run_at).getTime() : 0;
+            const dateB = b.last_run_at ? new Date(b.last_run_at).getTime() : 0;
+            return dateA - dateB;
         });
 
-        console.log(`Starting ingestion of ${sourcesToRun.length} sources (out of ${sources.length} active)`);
+        if (sourcesToRun.length === 0) {
+            return NextResponse.json({ message: 'Everything is up to date.' });
+        }
+
+        // We only process ONE source per cron run to stay within Vercel's 10s-60s limit
+        const source = sourcesToRun[0];
+        console.log(`Starting ingestion for single source: ${source.name} (Type: ${source.type})`);
         let totalIngested = 0;
 
-        // 3. Iterate and scrape
-        for (const source of sourcesToRun) {
+        // 3. Scrape the single source
+        {
             // Fetch recent hashes to prevent scraping beyond what's known
             const { data: existingJobs } = await supabase
                 .from('jobs')
