@@ -3,10 +3,12 @@ import type { NextRequest } from 'next/server';
 
 export function middleware(request: NextRequest) {
     const isLoginPage = request.nextUrl.pathname.startsWith('/login');
+    const isApiCron = request.nextUrl.pathname.startsWith('/api/cron');
     const authCookie = request.cookies.get('ai_executive_auth');
 
     // 1. Unauthenticated users trying to access protected paths get bounced
-    if (!authCookie && !isLoginPage) {
+    // Bypass for API Cron routes as they have their own header-based auth
+    if (!authCookie && !isLoginPage && !isApiCron) {
         return NextResponse.redirect(new URL('/login', request.url));
     }
 
