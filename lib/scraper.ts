@@ -213,8 +213,8 @@ async function scrapeHtml(source: import('../types/source').JobSource, existingH
             }
 
             page++;
-            // Be polite to the servers
-            await new Promise(r => setTimeout(r, 1500));
+            // Be polite to the servers, but fast enough for serverless limits
+            await new Promise(r => setTimeout(r, 200));
         }
 
         return jobs;
