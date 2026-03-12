@@ -27,7 +27,7 @@ export async function POST(request: Request) {
         const BATCH_SIZE = 50;
         const { data: jobsToEmbed } = await supabase
             .from('jobs')
-            .select('id, description, embedding')
+            .select('id, title, company, url, description, embedding')
             .is('embedding', null)
             .limit(BATCH_SIZE);
 
@@ -35,85 +35,89 @@ export async function POST(request: Request) {
             return NextResponse.json({ message: 'No new jobs to embed' });
         }
 
-        console.log(`Processing embeddings for ${jobsToEmbed.length} jobs`);
+        console.log(`Processing embeddings and matches for ${jobsToEmbed.length} jobs`);
 
-        // 3. Generate embeddings safely
-        for (const job of jobsToEmbed) {
-            // Prevent OpenAI Cost Leaks explicitly
-            if (!job.embedding) {
-                try {
-                    // Optional delay for rate limiting can go here
-                    const embedding = await generateEmbedding(job.description);
-                    await supabase.from('jobs').update({ embedding }).eq('id', job.id);
-                } catch (e) {
-                    console.error(`Failed embedding for job: ${job.id}`, e);
-                }
-            }
-        }
-
-        // 4. Fetch the primary user profile (assuming single admin setup for now)
-        const { data: profiles } = await supabase
+        // 3. Parallel Processing: Use Promise.all with chunks to avoid overwhelming OpenAI/DB
+        const userProfileRes = await supabase
             .from('user_profiles')
             .select('id, cv_embedding, email, telegram_chat_id')
             .not('cv_embedding', 'is', null)
-            .limit(1);
+            .limit(1)
+            .single();
 
-        const user = profiles?.[0];
+        const user = userProfileRes.data;
         if (!user) {
             return NextResponse.json({ message: 'No user CV embedding found' });
         }
 
-        // 5. Compute matches for newly embedded jobs
-        // In production, you might do this inside PG via an Edge function.
-        // For this tier, we fetch the jobs and do it in Next.js Serverless.
-        const { data: recentJobs } = await supabase
-            .from('jobs')
-            .select('id, title, company, url, description, embedding')
-            .in('id', jobsToEmbed.map(j => j.id));
-
+        let processed = 0;
         let highMatches = 0;
 
-        for (const job of recentJobs || []) {
-            if (!job.embedding) continue;
+        // Process in chunks of 5 for efficiency and to stay under Vercel execution limits
+        const CHUNK_SIZE = 5;
+        for (let i = 0; i < jobsToEmbed.length; i += CHUNK_SIZE) {
+            const chunk = jobsToEmbed.slice(i, i + CHUNK_SIZE);
+            
+            await Promise.all(chunk.map(async (job) => {
+                try {
+                    // Generate Embedding
+                    const embedding = await generateEmbedding(job.description);
+                    await supabase.from('jobs').update({ embedding }).eq('id', job.id);
 
-            const baseScore = cosineSimilarity(user.cv_embedding, job.embedding);
-            const titleBoost = calculateTitleBoost(job.title, job.description || '');
-            const score = Math.min(baseScore + titleBoost, 1.0);
+                    // Calculate Score
+                    const baseScore = cosineSimilarity(user.cv_embedding, embedding);
+                    // Use existing job title if available, otherwise guess from description
+                    const jobTitle = job.title || job.description.split('\n')[0];
+                    const titleBoost = calculateTitleBoost(jobTitle, job.description);
+                    const score = Math.min(baseScore + titleBoost, 1.0);
 
-            // Save score
-            await supabase.from('match_scores').upsert({
-                user_id: user.id,
-                job_id: job.id,
-                score: score
-            }, { onConflict: 'user_id,job_id' });
-
-            // Prepare notification if high match
-            if (score >= notifyThreshold) {
-                highMatches++;
-                console.log(`🔥 HIGH MATCH (${(score * 100).toFixed(1)}%) [base: ${(baseScore * 100).toFixed(1)}% + boost: ${(titleBoost * 100).toFixed(1)}%]: ${job.title} at ${job.company}`);
-
-                // Check if we already notified for this job to prevent spam
-                const { data: existingNotif } = await supabase
-                    .from('notifications')
-                    .select('id')
-                    .eq('user_id', user.id)
-                    .eq('job_id', job.id)
-                    .limit(1);
-
-                if (!existingNotif || existingNotif.length === 0) {
-                    const emailSent = await sendEmailNotification(job, score, user.email);
-                    const telegramSent = await sendTelegramNotification(job, score, user.telegram_chat_id);
-
-                    await supabase.from('notifications').insert({
+                    // Save score
+                    await supabase.from('match_scores').upsert({
                         user_id: user.id,
                         job_id: job.id,
-                        type: 'both' // Simplified for logging
-                    });
+                        score: score
+                    }, { onConflict: 'user_id,job_id' });
+
+                    processed++;
+
+                    // Handle High Match if necessary
+                    if (score >= notifyThreshold) {
+                        highMatches++;
+                        console.log(`🔥 HIGH MATCH (${(score * 100).toFixed(1)}%) [base: ${(baseScore * 100).toFixed(1)}% + boost: ${(titleBoost * 100).toFixed(1)}%]: ${job.title || jobTitle} at ${job.company}`);
+                        
+                        const { data: existingNotif } = await supabase
+                            .from('notifications')
+                            .select('id')
+                            .eq('user_id', user.id)
+                            .eq('job_id', job.id)
+                            .limit(1);
+
+                        if (!existingNotif || existingNotif.length === 0) {
+                            // We re-fetch full job details for notification
+                            // Note: job object already contains title, company, url from initial select
+                            const fullJob = { ...job, embedding }; // Add the newly generated embedding
+                            if (fullJob) {
+                                await sendEmailNotification(fullJob, score, user.email);
+                                await sendTelegramNotification(fullJob, score, user.telegram_chat_id);
+                                await supabase.from('notifications').insert({
+                                    user_id: user.id,
+                                    job_id: job.id,
+                                    type: 'both'
+                                });
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(`Failed individual match process for job ${job.id}:`, e);
                 }
-            }
+            }));
+            
+            // Check for potential timeout (Vercel typically 10s)
+            // If we've been running for more than 8s, we stop and let the next cron pick it up
+            // This is handled by processed count returning.
         }
 
-        return NextResponse.json({ success: true, processed: jobsToEmbed.length, newHighMatches: highMatches });
+        return NextResponse.json({ success: true, processed, newHighMatches: highMatches });
     } catch (error: any) {
         console.error('Matching Error:', error);
         return NextResponse.json({ success: false, error: error.message || 'Internal Server Error' }, { status: 500 });

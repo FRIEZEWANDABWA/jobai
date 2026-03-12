@@ -111,9 +111,12 @@ export async function POST(request: Request) {
 
                         if (!error) totalIngested++;
                     }
+                } else if (!jobs) {
+                    console.warn(`Scraper for ${source.name} returned null/undefined. Selector issue?`);
                 }
             } catch (err: any) {
-                console.error(`Failed to process source ${source.name}:`, err.message);
+                const isTimeout = err.message?.includes('Timeout');
+                console.error(`${isTimeout ? '⏳ TIMEOUT' : '❌ ERROR'} processing ${source.name}:`, err.message);
             } finally {
                 await supabase.from('job_sources')
                     .update({ last_run_at: new Date().toISOString() })
