@@ -2,10 +2,26 @@
 import { useEffect, useState } from "react";
 
 export default function DashboardPage() {
-    const [jobs, setJobs] = useState<{ highMatches: any[], strongMatches: any[], googleJobs: any[], otherJobs: any[], appliedJobs: any[], archivedJobs: any[] }>({ highMatches: [], strongMatches: [], googleJobs: [], otherJobs: [], appliedJobs: [], archivedJobs: [] });
+    const [jobs, setJobs] = useState<{
+        highMatches: any[];
+        strongMatches: any[];
+        watchJobs: any[];
+        googleJobs: any[];
+        otherJobs: any[];
+        appliedJobs: any[];
+        archivedJobs: any[];
+    }>({
+        highMatches: [],
+        strongMatches: [],
+        watchJobs: [],
+        googleJobs: [],
+        otherJobs: [],
+        appliedJobs: [],
+        archivedJobs: [],
+    });
     const [skills, setSkills] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'high' | 'strong' | 'google' | 'all' | 'applied' | 'archived'>('high');
+    const [activeTab, setActiveTab] = useState<'high' | 'strong' | 'watch' | 'google' | 'all' | 'applied' | 'archived'>('high');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
     const [velocity, setVelocity] = useState({ jobsFound: 0, highMatches: 0, applicationsSent: 0, conversionRate: 0 });
@@ -23,7 +39,17 @@ export default function DashboardPage() {
             fetch('/api/skills').then(res => res.json()),
             fetch(`/api/velocity?userId=${mockUserId}`).then(res => res.json())
         ]).then(([jobsData, skillsData, velocityData]) => {
-            if (!jobsData.error) setJobs(jobsData);
+            if (!jobsData.error) {
+                setJobs({
+                    highMatches: jobsData.highMatches || [],
+                    strongMatches: jobsData.strongMatches || [],
+                    watchJobs: jobsData.watchJobs || [],
+                    googleJobs: jobsData.googleJobs || [],
+                    otherJobs: jobsData.otherJobs || [],
+                    appliedJobs: jobsData.appliedJobs || [],
+                    archivedJobs: jobsData.archivedJobs || [],
+                });
+            }
             if (!skillsData.error && Array.isArray(skillsData)) setSkills(skillsData);
             if (!velocityData.error) setVelocity(velocityData);
         }).finally(() => setLoading(false));
@@ -48,7 +74,17 @@ export default function DashboardPage() {
                     fetch(`/api/jobs?userId=${mockUserId}`).then(r => r.json()),
                     fetch(`/api/velocity?userId=${mockUserId}`).then(r => r.json())
                 ]);
-                if (!jobsData.error) setJobs(jobsData);
+                if (!jobsData.error) {
+                    setJobs({
+                        highMatches: jobsData.highMatches || [],
+                        strongMatches: jobsData.strongMatches || [],
+                        watchJobs: jobsData.watchJobs || [],
+                        googleJobs: jobsData.googleJobs || [],
+                        otherJobs: jobsData.otherJobs || [],
+                        appliedJobs: jobsData.appliedJobs || [],
+                        archivedJobs: jobsData.archivedJobs || [],
+                    });
+                }
                 if (!velocityData.error) setVelocity(velocityData);
                 setSelectedJobs([]);
             }
@@ -66,16 +102,25 @@ export default function DashboardPage() {
             });
 
             if (res.ok) {
-                const allJobs = [...jobs.highMatches, ...jobs.strongMatches, ...jobs.otherJobs, ...jobs.appliedJobs, ...jobs.archivedJobs];
+                const allJobs = [
+                    ...jobs.highMatches,
+                    ...jobs.strongMatches,
+                    ...(jobs.watchJobs || []),
+                    ...jobs.otherJobs,
+                    ...(jobs.googleJobs || []),
+                    ...jobs.appliedJobs,
+                    ...jobs.archivedJobs,
+                ];
                 const jobToMove = allJobs.find(j => j.id === jobId);
 
                 const removeFromAll = (prev: typeof jobs) => ({
                     highMatches: prev.highMatches.filter((j: any) => j.id !== jobId),
                     strongMatches: prev.strongMatches.filter((j: any) => j.id !== jobId),
+                    watchJobs: (prev.watchJobs || []).filter((j: any) => j.id !== jobId),
                     googleJobs: (prev.googleJobs || []).filter((j: any) => j.id !== jobId),
                     otherJobs: prev.otherJobs.filter((j: any) => j.id !== jobId),
                     appliedJobs: prev.appliedJobs.filter((j: any) => j.id !== jobId),
-                    archivedJobs: prev.archivedJobs.filter((j: any) => j.id !== jobId)
+                    archivedJobs: prev.archivedJobs.filter((j: any) => j.id !== jobId),
                 });
 
                 if (status === 'rejected') {
@@ -274,6 +319,11 @@ export default function DashboardPage() {
                             ⚡ Strong Matches ({jobs.strongMatches.length})
                         </button>
                         <button
+                            onClick={() => setActiveTab('watch')}
+                            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'watch' ? 'border-amber-500 text-amber-700 dark:text-amber-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                            👀 Watch ({(jobs.watchJobs || []).length})
+                        </button>
+                        <button
                             onClick={() => setActiveTab('google')}
                             className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'google' ? 'border-purple-500 text-purple-600 dark:text-purple-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
                             🔍 Google Jobs ({jobs.googleJobs ? jobs.googleJobs.length : 0})
@@ -281,7 +331,7 @@ export default function DashboardPage() {
                         <button
                             onClick={() => setActiveTab('all')}
                             className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'all' ? 'border-gray-900 dark:border-white text-gray-900 dark:text-white' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
-                            📊 All Jobs ({jobs.otherJobs.length})
+                            📊 All Jobs ({(jobs.watchJobs || []).length + jobs.otherJobs.length})
                         </button>
                         <button
                             onClick={() => setActiveTab('applied')}
@@ -305,8 +355,10 @@ export default function DashboardPage() {
                                         let currentList: any[] = [];
                                         if (activeTab === 'high') currentList = filterJobs(jobs.highMatches);
                                         if (activeTab === 'strong') currentList = filterJobs(jobs.strongMatches);
+                                        if (activeTab === 'watch') currentList = filterJobs(jobs.watchJobs || []);
                                         if (activeTab === 'google') currentList = filterJobs(jobs.googleJobs || []);
-                                        if (activeTab === 'all') currentList = filterJobs(jobs.otherJobs);
+                                        if (activeTab === 'all')
+                                            currentList = filterJobs([...(jobs.watchJobs || []), ...jobs.otherJobs]);
                                         if (activeTab === 'applied') currentList = filterJobs(jobs.appliedJobs);
                                         if (activeTab === 'archived') currentList = filterJobs(jobs.archivedJobs);
                                         setSelectedJobs(currentList.map(j => j.id));
@@ -345,8 +397,10 @@ export default function DashboardPage() {
                         <div className="flex-1 grid gap-6 grid-cols-1 xl:grid-cols-2 content-start">
                             {activeTab === 'high' && filterJobs(jobs.highMatches).map(j => renderJobCard(j, true))}
                             {activeTab === 'strong' && filterJobs(jobs.strongMatches).map(j => renderJobCard(j, false))}
+                            {activeTab === 'watch' && filterJobs(jobs.watchJobs || []).map(j => renderJobCard(j, false))}
                             {activeTab === 'google' && filterJobs(jobs.googleJobs || []).map(j => renderJobCard(j, false))}
-                            {activeTab === 'all' && filterJobs(jobs.otherJobs).map(j => renderJobCard(j, false))}
+                            {activeTab === 'all' &&
+                                filterJobs([...(jobs.watchJobs || []), ...jobs.otherJobs]).map(j => renderJobCard(j, false))}
                             {activeTab === 'applied' && filterJobs(jobs.appliedJobs).map(j => renderJobCard(j, false))}
 
                             {/* Archived Job Cards with Restore & Delete */}
@@ -413,6 +467,13 @@ export default function DashboardPage() {
                                 </div>
                             )}
 
+                            {(activeTab === 'watch' && filterJobs(jobs.watchJobs || []).length === 0) && (
+                                <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
+                                    <span className="text-4xl mb-4">👀</span>
+                                    <p className="text-gray-500 dark:text-gray-400">No jobs on your watch list. Lower the Watch threshold in Admin to surface more roles here.</p>
+                                </div>
+                            )}
+
                             {(activeTab === 'google' && filterJobs(jobs.googleJobs || []).length === 0) && (
                                 <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
                                     <span className="text-4xl mb-4">🔍</span>
@@ -420,7 +481,8 @@ export default function DashboardPage() {
                                 </div>
                             )}
 
-                            {(activeTab === 'all' && filterJobs(jobs.otherJobs).length === 0) && (
+                            {(activeTab === 'all' &&
+                                filterJobs([...(jobs.watchJobs || []), ...jobs.otherJobs]).length === 0) && (
                                 <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
                                     <span className="text-4xl mb-4">🤷‍♂️</span>
                                     <p className="text-gray-500 dark:text-gray-400">No jobs in your feed right now.</p>

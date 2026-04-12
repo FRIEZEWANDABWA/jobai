@@ -30,7 +30,10 @@ export async function GET(request: Request) {
 
         // Fetch dynamic system_settings
         const { data: settings } = await supabase.from('system_settings').select('key, value');
-        const notifyThreshold = parseFloat(settings?.find(s => s.key === 'notify_threshold')?.value || '0.78');
+        const rawNotify = settings?.find((s) => s.key === 'notify_threshold')?.value;
+        const notifyThreshold = parseFloat(
+            rawNotify === undefined || rawNotify === null ? '0.80' : String(rawNotify).replace(/^"|"$/g, '')
+        );
 
         // 2. High matches per week (score >= notifyThreshold in last 7 days)
         const { count: highMatches } = await supabase

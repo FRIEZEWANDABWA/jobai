@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { parseTierThresholdsFromSettings } from '@/lib/scoring-v2';
 
 export async function GET(request: Request) {
     try {
@@ -13,7 +14,15 @@ export async function GET(request: Request) {
         const user = profiles?.[0];
 
         if (!user) {
-            return NextResponse.json({ highMatches: [], strongMatches: [], otherJobs: [] });
+            return NextResponse.json({
+                highMatches: [],
+                strongMatches: [],
+                watchJobs: [],
+                googleJobs: [],
+                otherJobs: [],
+                appliedJobs: [],
+                archivedJobs: [],
+            });
         }
 
         const userId = user.id;
@@ -35,8 +44,7 @@ export async function GET(request: Request) {
 
         // Fetch system_settings
         const { data: settings } = await supabase.from('system_settings').select('key, value');
-        const dashThreshold = parseFloat(settings?.find(s => s.key === 'dashboard_threshold')?.value || '0.70');
-        const notifyThreshold = parseFloat(settings?.find(s => s.key === 'notify_threshold')?.value || '0.80');
+        const th = parseTierThresholdsFromSettings(settings ?? null);
 
         // Categorize jobs
         const formattedJobs = jobs?.map(job => {
@@ -60,12 +68,17 @@ export async function GET(request: Request) {
         const unappliedJobs = activeJobs.filter(j => !['applied', 'interviewing', 'offer'].includes(j.status));
         const appliedJobs = activeJobs.filter(j => ['applied', 'interviewing', 'offer'].includes(j.status));
 
-        const highMatches = unappliedJobs.filter(j => j.match_score >= notifyThreshold && j.type !== 'google');
-        const strongMatches = unappliedJobs.filter(j => j.match_score >= dashThreshold && j.match_score < notifyThreshold && j.type !== 'google');
-        const googleJobs = unappliedJobs.filter(j => j.type === 'google');
-        const otherJobs = unappliedJobs.filter(j => j.match_score < dashThreshold && j.type !== 'google');
+        const highMatches = unappliedJobs.filter((j) => j.match_score >= th.notify && j.type !== 'google');
+        const strongMatches = unappliedJobs.filter(
+            (j) => j.match_score >= th.dashboard && j.match_score < th.notify && j.type !== 'google'
+        );
+        const watchJobs = unappliedJobs.filter(
+            (j) => j.match_score >= th.watch && j.match_score < th.dashboard && j.type !== 'google'
+        );
+        const googleJobs = unappliedJobs.filter((j) => j.type === 'google');
+        const otherJobs = unappliedJobs.filter((j) => j.match_score < th.watch && j.type !== 'google');
 
-        return NextResponse.json({ highMatches, strongMatches, googleJobs, otherJobs, appliedJobs, archivedJobs });
+        return NextResponse.json({ highMatches, strongMatches, watchJobs, googleJobs, otherJobs, appliedJobs, archivedJobs });
     } catch (error: any) {
         console.error('Fetch Jobs Error:', error);
         return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });

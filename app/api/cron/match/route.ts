@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { generateEmbedding } from '@/lib/openai';
 import { sendEmailNotification, sendTelegramNotification } from '@/lib/notifier';
-import { calculateTitleBoost } from '@/lib/title-boost';
+import { computeMatchScore, isScoringEngineV2 } from '@/lib/compute-match-score';
 
 // Basic vector dot product assuming normalized embeddings for cosine similarity
 function cosineSimilarity(vecA: number[] | string, vecB: number[] | string) {
@@ -20,7 +20,9 @@ export async function POST(request: Request) {
     try {
         // 1. Fetch system thresholds
         const { data: settings } = await supabase.from('system_settings').select('key, value');
-        const notifyThreshold = parseFloat(settings?.find(s => s.key === 'notify_threshold')?.value || '0.80');
+        const notifyThreshold = parseFloat(
+            String(settings?.find((s) => s.key === 'notify_threshold')?.value ?? '0.80').replace(/^"|"$/g, '')
+        );
 
         // 2. Fetch jobs where `embedding IS NULL`
         // Rate Limiting (Lightweight): Process max 50 at a time to avoid OpenAI burst overages
@@ -66,24 +68,44 @@ export async function POST(request: Request) {
 
                     // Calculate Score
                     const baseScore = cosineSimilarity(user.cv_embedding, embedding);
-                    // Use existing job title if available, otherwise guess from description
-                    const jobTitle = job.title || job.description.split('\n')[0];
-                    const titleBoost = calculateTitleBoost(jobTitle, job.description);
-                    const score = Math.min(baseScore + titleBoost, 1.0);
+                    const jobTitle = job.title || job.description.split('\n')[0] || '';
+                    const matchResult = computeMatchScore({
+                        title: jobTitle,
+                        description: job.description || '',
+                        company: job.company,
+                        baseSemantic: baseScore,
+                        settings: settings ?? undefined,
+                    });
+                    const score = matchResult.score;
 
-                    // Save score
-                    await supabase.from('match_scores').upsert({
-                        user_id: user.id,
-                        job_id: job.id,
-                        score: score
-                    }, { onConflict: 'user_id,job_id' });
+                    const { error: upsertError } = await supabase.from('match_scores').upsert(
+                        { user_id: user.id, job_id: job.id, score },
+                        { onConflict: 'user_id,job_id' }
+                    );
+                    if (upsertError) throw upsertError;
+
+                    if (matchResult.score_components) {
+                        const { error: compErr } = await supabase
+                            .from('match_scores')
+                            .update({ score_components: matchResult.score_components })
+                            .eq('user_id', user.id)
+                            .eq('job_id', job.id);
+                        if (compErr) {
+                            console.warn(
+                                `score_components not saved (run supabase migration?): ${compErr.message}`
+                            );
+                        }
+                    }
 
                     processed++;
 
                     // Handle High Match if necessary
                     if (score >= notifyThreshold) {
                         highMatches++;
-                        console.log(`🔥 HIGH MATCH (${(score * 100).toFixed(1)}%) [base: ${(baseScore * 100).toFixed(1)}% + boost: ${(titleBoost * 100).toFixed(1)}%]: ${job.title || jobTitle} at ${job.company}`);
+                        const engine = isScoringEngineV2() ? 'v2' : 'v1';
+                        console.log(
+                            `🔥 HIGH MATCH (${(score * 100).toFixed(1)}%) [engine ${engine}] base_semantic ${(baseScore * 100).toFixed(1)}%: ${job.title || jobTitle} at ${job.company}`
+                        );
                         
                         const { data: existingNotif } = await supabase
                             .from('notifications')
@@ -117,9 +139,15 @@ export async function POST(request: Request) {
             // This is handled by processed count returning.
         }
 
-        return NextResponse.json({ success: true, processed, newHighMatches: highMatches });
-    } catch (error: any) {
+        return NextResponse.json({
+            success: true,
+            processed,
+            newHighMatches: highMatches,
+            scoring_engine: isScoringEngineV2() ? 'v2' : 'v1',
+        });
+    } catch (error: unknown) {
         console.error('Matching Error:', error);
-        return NextResponse.json({ success: false, error: error.message || 'Internal Server Error' }, { status: 500 });
+        const message = error instanceof Error ? error.message : 'Internal Server Error';
+        return NextResponse.json({ success: false, error: message }, { status: 500 });
     }
 }

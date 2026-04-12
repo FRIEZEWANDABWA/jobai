@@ -18,7 +18,8 @@ create table system_settings (
 
 insert into system_settings (key, value, description) values
   ('notify_threshold', '0.80', 'Minimum score to trigger email/Telegram notifications'),
-  ('dashboard_threshold', '0.70', 'Minimum score to show on the dashboard');
+  ('dashboard_threshold', '0.70', 'Minimum score to show on the dashboard'),
+  ('watch_threshold', '0.60', 'Minimum score for Watch tab (between Other and Strong)');
 
 -- 3. Users and Profiles (Ready for multi-user, currently single admin)
 create table user_profiles (
@@ -68,7 +69,8 @@ create table match_scores (
   id uuid primary key default gen_random_uuid(),
   user_id uuid references user_profiles(id) on delete cascade not null,
   job_id uuid references jobs(id) on delete cascade not null,
-  score float not null, -- Cosine similarity score
+  score float not null, -- Final match score (v1: semantic + boost; v2: multi-signal)
+  score_components jsonb, -- Optional breakdown when using scoring v2
   calculated_at timestamp with time zone default timezone('utc'::text, now()),
   unique(user_id, job_id)
 );

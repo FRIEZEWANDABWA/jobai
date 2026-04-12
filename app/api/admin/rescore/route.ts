@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { computeMatchScore, isScoringEngineV2 } from '@/lib/compute-match-score';
 import { calculateTitleBoost } from '@/lib/title-boost';
 
-// One-time re-score of ALL existing match_scores with title boost
 function cosineSimilarity(vecA: number[] | string, vecB: number[] | string) {
     const a = typeof vecA === 'string' ? JSON.parse(vecA) : vecA;
     const b = typeof vecB === 'string' ? JSON.parse(vecB) : vecB;
@@ -11,7 +11,6 @@ function cosineSimilarity(vecA: number[] | string, vecB: number[] | string) {
 
 export async function GET() {
     try {
-        // Get user
         const { data: profiles } = await supabase
             .from('user_profiles')
             .select('id, cv_embedding')
@@ -21,10 +20,11 @@ export async function GET() {
         const user = profiles?.[0];
         if (!user) return NextResponse.json({ error: 'No user' });
 
-        // Fetch all jobs with embeddings
+        const { data: settings } = await supabase.from('system_settings').select('key, value');
+
         const { data: jobs } = await supabase
             .from('jobs')
-            .select('id, title, description, embedding')
+            .select('id, title, description, company, embedding')
             .not('embedding', 'is', null);
 
         if (!jobs) return NextResponse.json({ error: 'No jobs' });
@@ -34,16 +34,32 @@ export async function GET() {
 
         for (const job of jobs) {
             const baseScore = cosineSimilarity(user.cv_embedding, job.embedding);
-            const titleBoost = calculateTitleBoost(job.title, job.description || '');
-            const finalScore = Math.min(baseScore + titleBoost, 1.0);
+            const matchResult = computeMatchScore({
+                title: job.title || '',
+                description: job.description || '',
+                company: job.company,
+                baseSemantic: baseScore,
+                settings: settings ?? undefined,
+            });
 
-            if (titleBoost > 0) boosted++;
+            if (calculateTitleBoost(job.title || '', job.description || '') > 0) boosted++;
 
-            await supabase.from('match_scores').upsert({
-                user_id: user.id,
-                job_id: job.id,
-                score: finalScore
-            }, { onConflict: 'user_id,job_id' });
+            const { error: upsertError } = await supabase.from('match_scores').upsert(
+                { user_id: user.id, job_id: job.id, score: matchResult.score },
+                { onConflict: 'user_id,job_id' }
+            );
+            if (upsertError) throw upsertError;
+
+            if (matchResult.score_components) {
+                const { error: compErr } = await supabase
+                    .from('match_scores')
+                    .update({ score_components: matchResult.score_components })
+                    .eq('user_id', user.id)
+                    .eq('job_id', job.id);
+                if (compErr) {
+                    console.warn(`score_components update skipped: ${compErr.message}`);
+                }
+            }
 
             updated++;
         }
@@ -53,9 +69,11 @@ export async function GET() {
             totalJobs: jobs.length,
             updated,
             boosted,
-            message: `Re-scored ${updated} jobs. ${boosted} received title boosts.`
+            scoring_engine: isScoringEngineV2() ? 'v2' : 'v1',
+            message: `Re-scored ${updated} jobs (${isScoringEngineV2() ? 'v2 multi-signal' : 'v1 semantic + title boost'}).`,
         });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : "Internal Server Error";
+        return NextResponse.json({ error: message }, { status: 500 });
     }
 }
