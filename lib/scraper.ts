@@ -1,13 +1,28 @@
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 import { Job } from '../types/job';
+import { JobSource } from '../types/source';
+
+/**
+ * Normalizes text for deduplication: lowercase, trim, remove punctuation, standardize terms
+ */
+function normalizeText(text: string): string {
+    if (!text) return '';
+    let norm = text.toLowerCase().trim();
+    // Normalize common abbreviations
+    norm = norm.replace(/\bsr\.?\b/g, 'senior');
+    norm = norm.replace(/\bjr\.?\b/g, 'junior');
+    // Remove all punctuation (keep alphanumeric and spaces)
+    norm = norm.replace(/[^\w\s]|_/g, '').replace(/\s+/g, ' ');
+    return norm;
+}
 
 /**
  * Creates a unique SHA-256 hash for deduplication based on Title, Company, and Posted Date
  */
 export function generateDedupeHash(title: string, company: string, dateStr?: string | null): string {
-    const normTitle = title.trim().toLowerCase();
-    const normCompany = company.trim().toLowerCase();
+    const normTitle = normalizeText(title);
+    const normCompany = normalizeText(company);
     // Ensure date uses a standard YYYY-MM-DD format if available, else omit
     const normDate = dateStr ? new Date(dateStr).toISOString().split('T')[0] : '';
 
@@ -16,21 +31,51 @@ export function generateDedupeHash(title: string, company: string, dateStr?: str
 }
 
 /**
- * Main scraper dispatcher based on JobSource type.
+ * Header Fingerprint Rotation
  */
-export async function scrapeSource(source: import('../types/source').JobSource, existingHashes: Set<string> = new Set()): Promise<Partial<Job>[]> {
+function getRandomHeaders() {
+    const userAgents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15"
+    ];
+    
+    return {
+        "User-Agent": userAgents[Math.floor(Math.random() * userAgents.length)],
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Sec-Ch-Ua": '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Upgrade-Insecure-Requests": "1"
+    };
+}
+
+/**
+ * Main scraper dispatcher based on JobSource strategy.
+ */
+export async function scrapeSource(source: JobSource, existingHashes: Set<string> = new Set()): Promise<Partial<Job>[]> {
     try {
-        switch (source.type) {
+        switch (source.strategy) {
             case 'api':
                 return await scrapeApi(source, existingHashes);
             case 'rss':
                 return await scrapeRss(source, existingHashes);
             case 'html':
+            case 'proxy_html':
+            case 'browser':
                 return await scrapeHtml(source, existingHashes);
-            case 'google':
-                return await scrapeGoogle(source, existingHashes);
+            case 'ats_bamboohr':
+            case 'ats_greenhouse':
+            case 'ats_lever':
+            case 'ats_zoho':
+            case 'ats_workable':
+            case 'ats_csod':
+            case 'ats_mci':
+                return await scrapeAts(source, existingHashes);
             default:
-                console.warn(`Unsupported source type: ${source.type} for source ${source.name}`);
+                console.warn(`Unsupported strategy: ${source.strategy} for source ${source.name}`);
                 return [];
         }
     } catch (error) {
@@ -39,62 +84,68 @@ export async function scrapeSource(source: import('../types/source').JobSource, 
     }
 }
 
-// 1. API Scraper Example (e.g., ReliefWeb API)
-async function scrapeApi(source: import('../types/source').JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
-    const response = await fetch(source.base_url);
-    if (!response.ok) throw new Error(`API returned ${response.status}`);
+// 1. API Scraper (e.g., ReliefWeb API, RemoteOK)
+async function scrapeApi(source: JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
+    const timeout = (source.crawl_timeout_seconds || 15) * 1000;
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
 
-    const data = await response.json();
-    const config = source.parsing_config || {};
-    const jobs: Partial<Job>[] = [];
-    const items = data[config.resultsKey || 'data'] || [];
+    try {
+        const response = await fetch(source.base_url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`API returned ${response.status}`);
 
-    for (const item of items) {
-        const title = item[config.titleKey || 'title'] || 'Unknown Title';
-        const company = item[config.companyKey || 'organization'] || source.name;
-        const url = item[config.urlKey || 'url'] || '';
-        const date = item[config.dateKey || 'date'] || null;
+        const data = await response.json();
+        const config = source.parsing_config || {};
+        const jobs: Partial<Job>[] = [];
+        const items = data[config.resultsKey || 'data'] || [];
 
-        const hash = generateDedupeHash(title, company, date);
-        if (existingHashes.has(hash)) continue; // Skip existing
-        existingHashes.add(hash);
+        for (const item of items) {
+            const title = item[config.titleKey || 'title'] || 'Unknown Title';
+            const company = item[config.companyKey || 'organization'] || source.name;
+            const url = item[config.urlKey || 'url'] || '';
+            const date = item[config.dateKey || 'date'] || null;
 
-        jobs.push({
-            title,
-            company,
-            location: item[config.locationKey || 'location'] || null,
-            description: item[config.descriptionKey || 'body'] || `Job at ${company}`,
-            url,
-            posted_date: date,
-            dedupe_hash: hash,
-            source_id: source.id
-        });
+            const hash = generateDedupeHash(title, company, date);
+            if (existingHashes.has(hash)) continue;
+            existingHashes.add(hash);
+
+            jobs.push({
+                title,
+                company,
+                location: item[config.locationKey || 'location'] || null,
+                description: item[config.descriptionKey || 'body'] || `Job at ${company}`,
+                url,
+                posted_date: date,
+                dedupe_hash: hash,
+                source_id: source.id
+            });
+        }
+        return jobs;
+    } finally {
+        clearTimeout(id);
     }
-
-    return jobs;
 }
 
-// 2. RSS Scraper Example (Using generic fetch, would normally use 'rss-parser')
-async function scrapeRss(source: import('../types/source').JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
-    console.log(`Mock RSS Scrape for ${source.name}`);
+// 2. RSS Scraper
+async function scrapeRss(source: JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
+    console.log(`RSS Scrape for ${source.name}`);
+    // Real implementation would use rss-parser. Stubbed for now as requested.
     return [];
 }
 
-// 3. HTML Scraper Example (Using fetch and cheerio, with pagination logic)
-async function scrapeHtml(source: import('../types/source').JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
-    console.log(`HTML Scrape for ${source.name} via ${source.base_url}`);
+// 3. HTML & Proxy HTML Scraper
+async function scrapeHtml(source: JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
+    console.log(`HTML Scrape for ${source.name} using strategy ${source.strategy}`);
 
-    // COST OPTIMIZATION: Only use proxy if explicitly requested in config
-    // This saves 90% of credits for open sites like NGO/Company pages
-    const useProxy = !!process.env.PROXY_URL && source.parsing_config?.use_proxy === true; 
-
+    const isProxy = source.strategy === 'proxy_html' || source.strategy === 'browser';
+    const isBrowser = source.strategy === 'browser';
     
-    // Default to a 5 page maximum if not provided
-    const maxPages = source.parsing_config?.max_pages || 5; 
-    const paginationParam = source.parsing_config?.pagination_param || 'page'; // default to ?page=2
+    const maxPages = source.parsing_config?.max_pages || 3; 
+    const paginationParam = source.parsing_config?.pagination_param || 'page';
 
     const jobs: Partial<Job>[] = [];
     let page = 1;
+    const timeout = (source.crawl_timeout_seconds || (isProxy ? 30 : 15)) * 1000;
 
     try {
         while (page <= maxPages) {
@@ -102,7 +153,6 @@ async function scrapeHtml(source: import('../types/source').JobSource, existingH
             
             if (page > 1) {
                 if (paginationParam === 'path') {
-                    // converts https://example.com/jobs -> https://example.com/jobs/page/2
                     pageUrl = pageUrl.replace(/\/$/, '') + '/page/' + page;
                 } else {
                     const separator = pageUrl.includes('?') ? '&' : '?';
@@ -110,26 +160,37 @@ async function scrapeHtml(source: import('../types/source').JobSource, existingH
                 }
             }
 
-            const proxySeparator = process.env.PROXY_URL?.includes('?') ? '&' : '?';
-            
-            // For standard HTML, we only add premium flags if explicitly requested to save your ZenRows credits
             let fetchUrl = pageUrl;
-            if (useProxy) {
-                let proxyUrl: string = process.env.PROXY_URL || '';
-                if (source.parsing_config?.js_render) proxyUrl += `${proxySeparator}js_render=true`;
-                if (source.parsing_config?.premium_proxy) proxyUrl += `${proxySeparator}premium_proxy=true`;
+            if (isProxy && process.env.PROXY_URL) {
+                let proxyUrl = process.env.PROXY_URL;
+                const proxySeparator = proxyUrl.includes('?') ? '&' : '?';
+                
+                // Add JS render flag if strategy is browser
+                if (isBrowser || source.parsing_config?.js_render) {
+                    proxyUrl += `${proxySeparator}js_render=true`;
+                }
+                
+                if (source.parsing_config?.premium_proxy) {
+                    const sep = proxyUrl.includes('?') ? '&' : '?';
+                    proxyUrl += `${sep}premium_proxy=true`;
+                }
                 
                 const finalSeparator = proxyUrl.includes('?') ? '&' : '?';
                 fetchUrl = `${proxyUrl}${finalSeparator}url=${encodeURIComponent(pageUrl)}`;
             }
 
-            const response = await fetch(fetchUrl, {
-                headers: useProxy ? {} : {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 JobHunterAI/2.0",
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.5"
-                }
-            });
+            const controller = new AbortController();
+            const id = setTimeout(() => controller.abort(), timeout);
+
+            let response;
+            try {
+                response = await fetch(fetchUrl, {
+                    headers: isProxy ? {} : getRandomHeaders(),
+                    signal: controller.signal
+                });
+            } finally {
+                clearTimeout(id);
+            }
 
             if (!response.ok) {
                 console.error(`HTML scrape failed for ${source.name} with status ${response.status}`);
@@ -140,19 +201,34 @@ async function scrapeHtml(source: import('../types/source').JobSource, existingH
             const $ = cheerio.load(html);
             const config = source.parsing_config || {};
 
-            const itemSelector = config.item || 'article, .job, .job-listing, .card';
-            const titleSelector = config.title || 'h2, h3, .title';
-            const companySelector = config.company || '.company, .employer';
-            const locationSelector = config.location || '.location';
-            const linkSelector = config.url || 'h2 a, h3 a, h4 a, .title a, a.job-title, a[data-href]';
-            const descSelector = config.description || '.description, .summary, .content, p';
+            // BrighterMonday / MyJobMag fallback defaults
+            const isBrighterMonday = source.name.toLowerCase().includes('brightermonday');
+            const isMyJobMag = source.name.toLowerCase().includes('myjobmag');
+
+            let itemSelector = config.item || 'article, .job, .job-listing, .card';
+            let titleSelector = config.title || 'h2, h3, .title';
+            let companySelector = config.company || '.company, .employer';
+            let locationSelector = config.location || '.location';
+            let linkSelector = config.url || 'h2 a, h3 a, h4 a, .title a, a.job-title, a[data-href]';
+            let descSelector = config.description || '.description, .summary, .content, p';
+
+            // Override semantics if config is missing but we know the site
+            if (isBrighterMonday) {
+                itemSelector = '.listings-item';
+                titleSelector = 'h3 a';
+                linkSelector = 'h3 a';
+            } else if (isMyJobMag) {
+                itemSelector = 'li.job-info';
+                titleSelector = 'h2 a';
+                linkSelector = 'h2 a';
+            }
 
             let newJobsOnPage = 0;
             let hitExistingJob = false;
             const nodes = $(itemSelector).toArray();
 
             if (nodes.length === 0) {
-                console.log(`No parsable items found on page ${page} using selector '${itemSelector}'. Stopping.`);
+                console.log(`No parsable items found on page ${page}. Stopping.`);
                 break;
             }
 
@@ -162,9 +238,7 @@ async function scrapeHtml(source: import('../types/source').JobSource, existingH
                 const company = companyRaw.replace(/\s+/g, ' ');
 
                 let url = $(element).find(linkSelector).first().attr('href') || '';
-                if (!url) { 
-                    url = $(element).attr('href') || source.base_url;
-                }
+                if (!url) url = $(element).attr('href') || source.base_url;
 
                 if (url.startsWith('/')) {
                     const baseUrlObj = new URL(source.base_url);
@@ -176,9 +250,8 @@ async function scrapeHtml(source: import('../types/source').JobSource, existingH
                 const location = $(element).find(locationSelector).first().text().trim() || null;
                 
                 let description = $(element).find(descSelector).text().trim() || $(element).text().trim();
-                description = description.replace(/\s+/g, ' ').substring(0, 1500) || `${title} at ${company} in ${location || 'Kenya'}.`;
+                description = description.replace(/\s+/g, ' ').substring(0, 1500) || `${title} at ${company}.`;
 
-                // Calculate hash without date. If we use new Date() it creates duplicates across days
                 const hash = generateDedupeHash(title, company, null); 
 
                 if (existingHashes.has(hash)) {
@@ -195,15 +268,14 @@ async function scrapeHtml(source: import('../types/source').JobSource, existingH
                     location,
                     description,
                     url,
-                    posted_date: new Date().toISOString(), // Fallback posted date if source lacks it
+                    posted_date: new Date().toISOString(),
                     dedupe_hash: hash,
                     source_id: source.id
                 });
             }
 
-            // SMART PAGINATION: Stop scanning deeper pages if we are hitting jobs we already have
             if (hitExistingJob) {
-                console.log(`Encountered existing job on page ${page}. Stopping pagination to save resources.`);
+                console.log(`Encountered existing job on page ${page}. Stopping pagination.`);
                 break;
             }
 
@@ -213,184 +285,224 @@ async function scrapeHtml(source: import('../types/source').JobSource, existingH
             }
 
             page++;
-            // Be polite to the servers, but fast enough for serverless limits
             await new Promise(r => setTimeout(r, 200));
         }
 
         return jobs;
     } catch (error) {
         console.error(`Exception while running HTML parsing on ${source.name}:`, error);
-        return jobs; // Return whatever we gathered before error
+        return jobs; 
     }
 }
 
-// 4. Google SERP Scraper
-async function scrapeGoogle(source: import('../types/source').JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
-    console.log(`Google Scrape for ${source.name} via ${source.base_url}`);
+// 4. ATS Template Engine
+async function scrapeAts(source: JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
+    console.log(`ATS Scrape for ${source.name} using ${source.strategy}`);
+    
+    switch (source.strategy) {
+        case 'ats_zoho':
+            return await scrapeAtsZoho(source, existingHashes);
+        case 'ats_bamboohr':
+            return await scrapeAtsBambooHR(source, existingHashes);
+        case 'ats_csod':
+            return await scrapeAtsCsod(source, existingHashes);
+        case 'ats_mci':
+            return await scrapeAtsMci(source, existingHashes);
+        default:
+            console.warn(`ATS strategy ${source.strategy} not implemented yet.`);
+            return [];
+    }
+}
 
-    // Google NECESSARILY requires a proxy but we can try to avoid JS rendering to save credits 
-    // unless the first attempt fails or it's forced.
-    const useProxy = !!process.env.PROXY_URL;
-
-    const maxPages = source.parsing_config?.max_pages || 2;
+// ATS: Zoho Recruit
+async function scrapeAtsZoho(source: JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
+    console.log(`Executing ATS Zoho parser for ${source.name}`);
     const jobs: Partial<Job>[] = [];
-    let page = 1;
-
-    const userAgents = [
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    ];
-
+    
+    // Zoho API format: https://[company].zohorecruit.com/recruit/v2/public/Job_Openings?websitename=Careers
     try {
-        while (page <= maxPages) {
-            let pageUrl = source.base_url;
+        const urlObj = new URL(source.base_url);
+        // Try to construct API endpoint if base_url is the generic career page
+        const apiUrl = `${urlObj.protocol}//${urlObj.hostname}/recruit/v2/public/Job_Openings?websitename=Careers`;
+        
+        const response = await fetch(apiUrl, { headers: { 'Accept': 'application/json' } });
+        if (response.ok) {
+            const data = await response.json();
+            const items = data.data || [];
             
-            // Google pagination uses 'start' parameter (0, 10, 20...)
-            if (page > 1) {
-                const start = (page - 1) * 10;
-                const separator = pageUrl.includes('?') ? '&' : '?';
-                pageUrl += `${separator}start=${start}`;
-            }
-
-            const googleProxySeparator = process.env.PROXY_URL?.includes('?') ? '&' : '?';
-            
-            // Google requires Premium Proxy, but we try WITHOUT JS Render first to save costs
-            // Users can enable it via config if results stop appearing
-            let googleProxyUrl = process.env.PROXY_URL || '';
-            if (!googleProxyUrl.includes('premium_proxy')) {
-                googleProxyUrl += `${googleProxySeparator}premium_proxy=true`;
-            }
-            
-            const finalSeparator = googleProxyUrl.includes('?') ? '&' : '?';
-            const fetchUrl = useProxy ? `${googleProxyUrl}${finalSeparator}url=${encodeURIComponent(pageUrl)}` : pageUrl;
-
-            const randomUa = userAgents[Math.floor(Math.random() * userAgents.length)];
-
-            const response = await fetch(fetchUrl, {
-                headers: useProxy ? {} : {
-                    "User-Agent": randomUa,
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-                    "Accept-Language": "en-US,en;q=0.5"
-                }
-            });
-
-            if (!response.ok) {
-                console.error(`Google scrape failed for ${source.name} with status ${response.status}`);
-                break;
-            }
-
-            const html = await response.text();
-            const $ = cheerio.load(html);
-
-            let newJobsOnPage = 0;
-            let hitExistingJob = false;
-            
-            // Google SERP typical result block:
-            // Standard search results are often wrapped in 'div.g' or similar structures
-            // Links are usually <a> tags inside h3 tags
-            const nodes = $('div.g').length > 0 ? $('div.g').toArray() : $('div').filter((_, el) => $(el).find('h3').length > 0 && $(el).find('a').length > 0).toArray();
-
-            if (nodes.length === 0) {
-                console.log(`No parsable Google results found on page ${page}. Stopping.`);
-                break;
-            }
-
-            for (const element of nodes) {
-                const titleNode = $(element).find('h3').first();
-                const titleText = titleNode.text().trim();
+            for (const item of items) {
+                const title = item.Job_Opening_Name || 'Unknown Title';
+                const url = item.URL || source.base_url;
+                const date = item.Date_Opened || null;
+                const location = [item.City, item.Country].filter(Boolean).join(', ');
                 
-                const linkNode = titleNode.parent('a').length > 0 ? titleNode.parent('a') : $(element).find('a').first();
-                let url = linkNode.attr('href') || '';
-                
-                // Clean Google redirect URLs: /url?q=https://...&sa=U...
-                if (url.startsWith('/url?q=')) {
-                    url = url.split('/url?q=')[1].split('&')[0];
-                    url = decodeURIComponent(url);
-                }
-
-                if (!titleText || !url || !url.startsWith('http')) continue;
-
-                // Basic attempt to extract snippets
-                // The snippet is usually in a div that follows the title/URL, often having a lot of text
-                let description = $(element).find('div').filter((_, el) => {
-                     // Get divs that don't have h3/a inside them as direct children, usually the snippet
-                     const text = $(el).text();
-                     return text.length > 50 && text.length < 500 && $(el).find('h3').length === 0;
-                }).first().text().trim() || titleText;
-                
-                // For Google scraping, company might be hard to parse exactly, 
-                // we'll try to guess from the URL domain if not obvious, or just use the query title.
-                let company = source.name;
-                try {
-                   const parsedUrl = new URL(url);
-                   let domain = parsedUrl.hostname.replace('www.', '');
-                   if (domain === 'linkedin.com') {
-                       // Sometimes title is "IT Manager - Microsoft - LinkedIn"
-                       const parts = titleText.split(' - ');
-                       if (parts.length >= 3) {
-                           company = parts[1].trim();
-                       } else {
-                           company = 'LinkedIn';
-                       }
-                   } else {
-                       company = domain;
-                   }
-                } catch(e) {}
-
-                // Attempt to clean up title (remove " - LinkedIn", etc.)
-                let cleanedTitle = titleText;
-                if (cleanedTitle.includes(' - ')) {
-                    cleanedTitle = cleanedTitle.split(' - ')[0].trim();
-                } else if (cleanedTitle.includes(' | ')) {
-                    cleanedTitle = cleanedTitle.split(' | ')[0].trim();
-                }
-
-                const hash = generateDedupeHash(cleanedTitle, company, null); 
-
-                if (existingHashes.has(hash)) {
-                    hitExistingJob = true;
-                    continue; 
-                }
-
+                const hash = generateDedupeHash(title, source.name, date);
+                if (existingHashes.has(hash)) continue;
                 existingHashes.add(hash);
-                newJobsOnPage++;
                 
                 jobs.push({
-                    title: cleanedTitle,
-                    company,
-                    location: 'Kenya', // default for these queries based on user instruction
-                    description,
+                    title,
+                    company: source.name,
+                    location,
+                    description: item.Job_Description || `Job opening at ${source.name}`,
                     url,
-                    posted_date: new Date().toISOString(),
+                    posted_date: date ? new Date(date).toISOString() : new Date().toISOString(),
                     dedupe_hash: hash,
                     source_id: source.id
                 });
             }
-
-            if (hitExistingJob) {
-                console.log(`Encountered existing job on Google page ${page}. Stopping pagination.`);
-                break;
-            }
-
-            if (newJobsOnPage === 0) {
-                console.log(`No new distinct jobs found on Google page ${page}. Stopping.`);
-                break;
-            }
-
-            page++;
-            // Longer mandatory polite delay for Google: 20-30 seconds
-            const delay = Math.floor(Math.random() * (30000 - 20000 + 1)) + 20000;
-            console.log(`Waiting ${delay}ms before next Google page...`);
-            await new Promise(r => setTimeout(r, delay));
+            return jobs;
         }
-
-        return jobs;
-    } catch (error) {
-        console.error(`Exception while running Google parsing on ${source.name}:`, error);
-        return jobs;
+    } catch (e) {
+        console.warn(`Zoho JSON API failed for ${source.name}, falling back to basic HTML parsing`, e);
     }
+
+    // Fallback: It might be an old Zoho iframe, we'd need proxy_html/browser here
+    // But since strategy is ATS, we return what we found.
+    return jobs;
 }
 
+// ATS: BambooHR
+async function scrapeAtsBambooHR(source: JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
+    console.log(`Executing ATS BambooHR parser for ${source.name}`);
+    const jobs: Partial<Job>[] = [];
+    
+    try {
+        const urlObj = new URL(source.base_url);
+        const subdomain = urlObj.hostname.split('.')[0];
+        
+        // BambooHR modern API endpoint
+        const apiUrl = `https://${subdomain}.bamboohr.com/careers/list`;
+        
+        const response = await fetch(apiUrl, { headers: { 'Accept': 'application/json' } });
+        if (!response.ok) throw new Error('BambooHR API failed');
+        
+        const data = await response.json();
+        const items = data.result || [];
+        
+        for (const item of items) {
+            const title = item.jobOpeningName || 'Unknown Title';
+            const id = item.id;
+            const url = `https://${subdomain}.bamboohr.com/careers/${id}`;
+            const location = item.location ? [item.location.city, item.location.country].filter(Boolean).join(', ') : null;
+            
+            const hash = generateDedupeHash(title, source.name, null);
+            if (existingHashes.has(hash)) continue;
+            existingHashes.add(hash);
+            
+            jobs.push({
+                title,
+                company: source.name,
+                location,
+                description: item.departmentLabel ? `Department: ${item.departmentLabel}` : `Job opening at ${source.name}`,
+                url,
+                posted_date: new Date().toISOString(),
+                dedupe_hash: hash,
+                source_id: source.id
+            });
+        }
+    } catch (e) {
+        console.error(`BambooHR parsing error for ${source.name}:`, e);
+    }
+    
+    return jobs;
+}
+
+// ATS: CSOD (Cornerstone OnDemand)
+async function scrapeAtsCsod(source: JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
+    console.log(`Executing ATS CSOD parser for ${source.name}`);
+    const jobs: Partial<Job>[] = [];
+    
+    // CSOD relies heavily on POST requests to /ats/careersite/search.aspx or specific JSON APIs
+    // For this boilerplate, we'll hit the HTML and look for JSON embedded in the page
+    try {
+        const response = await fetch(source.base_url);
+        const html = await response.text();
+        
+        // Often CSOD embeds the initial search results in a JS variable
+        // This is a naive extraction; CSOD usually requires proxy_html + network interception for robust scraping
+        const $ = cheerio.load(html);
+        const nodes = $('li.job-result, .job-listing').toArray();
+        
+        for (const element of nodes) {
+            const titleNode = $(element).find('h2, h3, .job-title').first();
+            const title = titleNode.text().trim();
+            let url = titleNode.find('a').attr('href') || $(element).find('a').attr('href') || source.base_url;
+            
+            if (url.startsWith('/')) {
+                const urlObj = new URL(source.base_url);
+                url = `${urlObj.protocol}//${urlObj.hostname}${url}`;
+            }
+            
+            if (!title) continue;
+            
+            const hash = generateDedupeHash(title, source.name, null);
+            if (existingHashes.has(hash)) continue;
+            existingHashes.add(hash);
+            
+            jobs.push({
+                title,
+                company: source.name,
+                location: $(element).find('.location').text().trim() || null,
+                description: `Job opening at ${source.name}`,
+                url,
+                posted_date: new Date().toISOString(),
+                dedupe_hash: hash,
+                source_id: source.id
+            });
+        }
+    } catch (e) {
+        console.error(`CSOD parsing error for ${source.name}:`, e);
+    }
+    
+    return jobs;
+}
+
+// ATS: MCI (Used by Safal Group)
+async function scrapeAtsMci(source: JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
+    console.log(`Executing ATS MCI parser for ${source.name}`);
+    const jobs: Partial<Job>[] = [];
+    
+    try {
+        const response = await fetch(source.base_url);
+        const html = await response.text();
+        const $ = cheerio.load(html);
+        
+        // MCI typically uses tables or specific row classes
+        const nodes = $('.MciJobResult, tr.job-row, .opportunity').toArray();
+        
+        for (const element of nodes) {
+            const titleNode = $(element).find('a').first();
+            const title = titleNode.text().trim();
+            let url = titleNode.attr('href') || source.base_url;
+            
+            if (url.startsWith('/')) {
+                const urlObj = new URL(source.base_url);
+                url = `${urlObj.protocol}//${urlObj.hostname}${url}`;
+            }
+            
+            if (!title) continue;
+            
+            const location = $(element).find('.location, td:nth-child(2)').text().trim() || null;
+            
+            const hash = generateDedupeHash(title, source.name, null);
+            if (existingHashes.has(hash)) continue;
+            existingHashes.add(hash);
+            
+            jobs.push({
+                title,
+                company: source.name,
+                location,
+                description: `Job opening at ${source.name}`,
+                url,
+                posted_date: new Date().toISOString(),
+                dedupe_hash: hash,
+                source_id: source.id
+            });
+        }
+    } catch (e) {
+         console.error(`MCI parsing error for ${source.name}:`, e);
+    }
+    
+    return jobs;
+}
