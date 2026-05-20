@@ -8,17 +8,33 @@ jobs:
   run-ingestion-and-matching:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Job Ingestion Webhook
+      - name: Trigger Job Ingestion (Enqueue Sources)
         run: |
           curl -f -s -S -L -X POST ${{ secrets.PRODUCTION_URL }}/api/cron/ingest \
-          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+          -H "Content-Type: application/json" \
+          -d '{"force": false}'
           
-      - name: Sleep to allow DB propagation
+      - name: Sleep to allow queue propagation
+        run: sleep 10
+
+      - name: Trigger Worker (Process Scrape Queue — Pass 1)
+        run: |
+          curl -f -s -S -L -X POST ${{ secrets.PRODUCTION_URL }}/api/worker/scrape \
+          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+      - name: Sleep between worker passes
+        run: sleep 15
+
+      - name: Trigger Worker (Process Scrape Queue — Pass 2)
+        run: |
+          curl -f -s -S -L -X POST ${{ secrets.PRODUCTION_URL }}/api/worker/scrape \
+          -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
+
+      - name: Sleep before matching
         run: sleep 10
         
-      - name: Trigger AI Matching Webhook
+      - name: Trigger AI Matching Engine
         run: |
           curl -f -s -S -L -X POST ${{ secrets.PRODUCTION_URL }}/api/cron/match \
           -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}"
-
-
