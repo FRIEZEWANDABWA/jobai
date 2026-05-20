@@ -20,14 +20,24 @@ export async function POST(request: Request) {
         // 2. Delay slightly for DB propagation
         await new Promise(r => setTimeout(r, 2000));
 
-        // 3. Manually trigger Match
+        // 3. Trigger Worker (Process Scrape Queue)
+        const workerRes = await fetch(`${baseUrl}/api/worker/scrape`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${cronSecret}` }
+        });
+        const workerData = await workerRes.json();
+
+        // 4. Delay before matching
+        await new Promise(r => setTimeout(r, 3000));
+
+        // 5. Manually trigger Match
         const matchRes = await fetch(`${baseUrl}/api/cron/match`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${cronSecret}` }
         });
         const matchData = await matchRes.json();
 
-        return NextResponse.json({ success: true, ingestData, matchData });
+        return NextResponse.json({ success: true, ingestData, workerData, matchData });
     } catch (error: any) {
         console.error('Trigger Error:', error);
         return NextResponse.json({ success: false, error: error.message }, { status: 500 });
