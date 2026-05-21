@@ -80,7 +80,7 @@ export async function scrapeSource(source: JobSource, existingHashes: Set<string
         }
     } catch (error) {
         console.error(`Error scraping source ${source.name}:`, error);
-        return [];
+        throw error;
     }
 }
 
