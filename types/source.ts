@@ -11,6 +11,7 @@ export interface UserProfile {
 
 export interface SourceHealth {
     consecutive_failures: number;
+    consecutive_zero_runs?: number;
     success_rate: number;       // 0–100%
     avg_response_ms: number;
     last_success_at: string | null;
@@ -20,6 +21,7 @@ export interface SourceHealth {
     last_status_code: number | null;
     status: 'healthy' | 'degraded' | 'paused';
 }
+
 
 export interface JobSource {
     id: string; // uuid
@@ -42,6 +44,8 @@ export interface JobSource {
     // Observability & Tuning
     source_health: SourceHealth | null;
     priority: 'core' | 'high' | 'medium' | 'low';
+    execution_tier?: 'realtime' | 'frequent' | 'standard' | 'slow';
+    expected_job_volume?: 'high' | 'medium' | 'low' | 'very_low';
     risk_level: 'low' | 'moderate' | 'high';
     crawl_frequency_minutes: number | null;
     crawl_timeout_seconds: number | null;
