@@ -113,28 +113,48 @@ async function scrapeApi(source: JobSource, existingHashes: Set<string>): Promis
         if (source.name.toLowerCase().includes('remote ok')) {
 
             const items = Array.isArray(data)
-                ? data.slice(1)
+                ? data.filter((item: any) => item && item.id)
                 : [];
 
             for (const item of items) {
 
-                const title = item.position || item.title || 'Unknown Title';
-                const company = item.company || 'RemoteOK';
-                const url = item.url || '';
-                const date = item.date || null;
+                const title =
+                    item.position ||
+                    item.role ||
+                    item.title ||
+                    'Unknown Title';
+
+                const company =
+                    item.company ||
+                    'RemoteOK';
+
+                const url =
+                    item.url ||
+                    `https://remoteok.com/remote-jobs/${item.id}`;
+
+                const date =
+                    item.date ||
+                    new Date().toISOString();
 
                 const hash = generateDedupeHash(title, company, date);
 
                 if (existingHashes.has(hash)) continue;
+
                 existingHashes.add(hash);
 
                 jobs.push({
                     title,
                     company,
-                    location: item.location || 'Remote',
-                    description: item.description || `Remote role at ${company}`,
+                    location:
+                        item.location ||
+                        'Remote',
+
+                    description:
+                        item.description ||
+                        `${title} at ${company}`,
+
                     url,
-                    posted_date: date || new Date().toISOString(),
+                    posted_date: date,
                     dedupe_hash: hash,
                     source_id: source.id
                 });
