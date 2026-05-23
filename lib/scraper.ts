@@ -370,9 +370,10 @@ async function scrapeHtml(source: JobSource, existingHashes: Set<string>): Promi
 
             // Override semantics if config is missing but we know the site
             if (isBrighterMonday) {
-                itemSelector = '.listings-item';
-                titleSelector = 'h3 a';
-                linkSelector = 'h3 a';
+                itemSelector = '.flex.items-center'; // wrapper div
+                titleSelector = 'a[data-cy="listing-title-link"]';
+                linkSelector = 'a[data-cy="listing-title-link"]';
+                companySelector = 'a[data-cy="listing-employer-name"]'; // likely
             } else if (isMyJobMag) {
                 itemSelector = 'li.job-info';
                 titleSelector = 'h2 a';
