@@ -473,9 +473,9 @@ export default function AdminPage() {
                                                         s.source_health.status === 'degraded' ? 'text-orange-500' :
                                                         s.source_health.status === 'paused' ? 'text-red-500' : 'text-green-500'
                                                     }`}>
-                                                        {s.source_health.status.toUpperCase()}
+                                                        {s.source_health.status?.toUpperCase() || 'UNKNOWN'}
                                                     </span>
-                                                    <span className="text-[10px] text-gray-400">Avg: {s.source_health.avg_response_ms}ms | Fails: {s.source_health.consecutive_failures}</span>
+                                                    <span className="text-[10px] text-gray-400">Avg: {s.source_health.avg_response_ms || 0}ms | Fails: {s.source_health.consecutive_failures || 0}</span>
                                                 </div>
                                             ) : (
                                                 <span className="text-xs text-gray-400">No Data</span>
