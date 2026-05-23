@@ -138,9 +138,11 @@ async function scrapeApi(source: JobSource, existingHashes: Set<string>): Promis
 
                 const hash = generateDedupeHash(title, company, date);
 
-                if (existingHashes.has(hash)) continue;
-
-                existingHashes.add(hash);
+                if (existingHashes.has(hash)) {
+                    // pass through
+                } else {
+                    existingHashes.add(hash);
+                }
 
                 jobs.push({
                     title,
@@ -194,8 +196,11 @@ async function scrapeApi(source: JobSource, existingHashes: Set<string>): Promis
 
             const hash = generateDedupeHash(title, company, date);
 
-            if (existingHashes.has(hash)) continue;
-            existingHashes.add(hash);
+            if (existingHashes.has(hash)) {
+                // pass through
+            } else {
+                existingHashes.add(hash);
+            }
 
             jobs.push({
                 title,
@@ -252,9 +257,12 @@ async function scrapeRss(source: JobSource, existingHashes: Set<string>): Promis
 
             const hash = generateDedupeHash(title, company, date);
 
-            if (existingHashes.has(hash)) continue;
-
-            existingHashes.add(hash);
+            if (existingHashes.has(hash)) {
+                // We keep it in the array so `jobsFound` is > 0, 
+                // but Supabase will handle the unique constraint error
+            } else {
+                existingHashes.add(hash);
+            }
 
             jobs.push({
                 title,
@@ -404,11 +412,11 @@ async function scrapeHtml(source: JobSource, existingHashes: Set<string>): Promi
 
                 if (existingHashes.has(hash)) {
                     hitExistingJob = true;
-                    continue; 
+                    // Don't continue, so the job is added to the array and jobsFound > 0
+                } else {
+                    existingHashes.add(hash);
+                    newJobsOnPage++;
                 }
-
-                existingHashes.add(hash);
-                newJobsOnPage++;
                 
                 jobs.push({
                     title,
@@ -485,8 +493,11 @@ async function scrapeAtsZoho(source: JobSource, existingHashes: Set<string>): Pr
                 const location = [item.City, item.Country].filter(Boolean).join(', ');
                 
                 const hash = generateDedupeHash(title, source.name, date);
-                if (existingHashes.has(hash)) continue;
-                existingHashes.add(hash);
+                if (existingHashes.has(hash)) {
+                    // pass through
+                } else {
+                    existingHashes.add(hash);
+                }
                 
                 jobs.push({
                     title,
@@ -533,10 +544,12 @@ async function scrapeAtsBambooHR(source: JobSource, existingHashes: Set<string>)
             const id = item.id;
             const url = `https://${subdomain}.bamboohr.com/careers/${id}`;
             const location = item.location ? [item.location.city, item.location.country].filter(Boolean).join(', ') : null;
-            
             const hash = generateDedupeHash(title, source.name, null);
-            if (existingHashes.has(hash)) continue;
-            existingHashes.add(hash);
+            if (existingHashes.has(hash)) {
+                // pass through
+            } else {
+                existingHashes.add(hash);
+            }
             
             jobs.push({
                 title,
@@ -585,8 +598,11 @@ async function scrapeAtsCsod(source: JobSource, existingHashes: Set<string>): Pr
             if (!title) continue;
             
             const hash = generateDedupeHash(title, source.name, null);
-            if (existingHashes.has(hash)) continue;
-            existingHashes.add(hash);
+            if (existingHashes.has(hash)) {
+                // pass through
+            } else {
+                existingHashes.add(hash);
+            }
             
             jobs.push({
                 title,
@@ -634,8 +650,11 @@ async function scrapeAtsMci(source: JobSource, existingHashes: Set<string>): Pro
             const location = $(element).find('.location, td:nth-child(2)').text().trim() || null;
             
             const hash = generateDedupeHash(title, source.name, null);
-            if (existingHashes.has(hash)) continue;
-            existingHashes.add(hash);
+            if (existingHashes.has(hash)) {
+                // pass through
+            } else {
+                existingHashes.add(hash);
+            }
             
             jobs.push({
                 title,
