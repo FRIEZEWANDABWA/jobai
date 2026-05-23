@@ -5,6 +5,7 @@ export default function DashboardPage() {
     const [jobs, setJobs] = useState<{
         highMatches: any[];
         strongMatches: any[];
+        globalJobs: any[];
         watchJobs: any[];
         googleJobs: any[];
         otherJobs: any[];
@@ -13,6 +14,7 @@ export default function DashboardPage() {
     }>({
         highMatches: [],
         strongMatches: [],
+        globalJobs: [],
         watchJobs: [],
         googleJobs: [],
         otherJobs: [],
@@ -21,7 +23,7 @@ export default function DashboardPage() {
     });
     const [skills, setSkills] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<'high' | 'strong' | 'watch' | 'google' | 'all' | 'applied' | 'archived'>('high');
+    const [activeTab, setActiveTab] = useState<'high' | 'strong' | 'global' | 'watch' | 'google' | 'all' | 'applied' | 'archived'>('high');
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
     const [velocity, setVelocity] = useState({ jobsFound: 0, highMatches: 0, applicationsSent: 0, conversionRate: 0 });
@@ -43,6 +45,7 @@ export default function DashboardPage() {
                 setJobs({
                     highMatches: jobsData.highMatches || [],
                     strongMatches: jobsData.strongMatches || [],
+                    globalJobs: jobsData.globalJobs || [],
                     watchJobs: jobsData.watchJobs || [],
                     googleJobs: jobsData.googleJobs || [],
                     otherJobs: jobsData.otherJobs || [],
@@ -78,6 +81,7 @@ export default function DashboardPage() {
                     setJobs({
                         highMatches: jobsData.highMatches || [],
                         strongMatches: jobsData.strongMatches || [],
+                        globalJobs: jobsData.globalJobs || [],
                         watchJobs: jobsData.watchJobs || [],
                         googleJobs: jobsData.googleJobs || [],
                         otherJobs: jobsData.otherJobs || [],
@@ -105,6 +109,7 @@ export default function DashboardPage() {
                 const allJobs = [
                     ...jobs.highMatches,
                     ...jobs.strongMatches,
+                    ...jobs.globalJobs,
                     ...(jobs.watchJobs || []),
                     ...jobs.otherJobs,
                     ...(jobs.googleJobs || []),
@@ -116,6 +121,7 @@ export default function DashboardPage() {
                 const removeFromAll = (prev: typeof jobs) => ({
                     highMatches: prev.highMatches.filter((j: any) => j.id !== jobId),
                     strongMatches: prev.strongMatches.filter((j: any) => j.id !== jobId),
+                    globalJobs: prev.globalJobs.filter((j: any) => j.id !== jobId),
                     watchJobs: (prev.watchJobs || []).filter((j: any) => j.id !== jobId),
                     googleJobs: (prev.googleJobs || []).filter((j: any) => j.id !== jobId),
                     otherJobs: prev.otherJobs.filter((j: any) => j.id !== jobId),
@@ -132,9 +138,12 @@ export default function DashboardPage() {
                 } else if (status === 'unarchive') {
                     // Restore to main feed by setting status to null
                     const restoredJob = { ...jobToMove, status: null };
+                    // If it was a global job, put it back in global
+                    const isGlobal = ['We Work Remotely', 'NGOJobsInAfrica', 'ReliefWeb', 'ReliefWeb (IT Africa)'].includes(restoredJob.source_name);
                     setJobs(prev => ({
                         ...removeFromAll(prev),
-                        strongMatches: [restoredJob, ...prev.strongMatches]
+                        strongMatches: !isGlobal ? [restoredJob, ...prev.strongMatches] : prev.strongMatches,
+                        globalJobs: isGlobal ? [restoredJob, ...prev.globalJobs] : prev.globalJobs,
                     }));
                 } else {
                     const updatedJob = { ...jobToMove, status };
@@ -181,10 +190,12 @@ export default function DashboardPage() {
                 const jobToRestore = jobs.archivedJobs.find(j => j.id === jobId);
                 if (jobToRestore) {
                     const restoredJob = { ...jobToRestore, status: null };
+                    const isGlobal = ['We Work Remotely', 'NGOJobsInAfrica', 'ReliefWeb', 'ReliefWeb (IT Africa)'].includes(restoredJob.source_name);
                     setJobs(prev => ({
                         ...prev,
                         archivedJobs: prev.archivedJobs.filter((j: any) => j.id !== jobId),
-                        strongMatches: [restoredJob, ...prev.strongMatches]
+                        strongMatches: !isGlobal ? [restoredJob, ...prev.strongMatches] : prev.strongMatches,
+                        globalJobs: isGlobal ? [restoredJob, ...prev.globalJobs] : prev.globalJobs,
                     }));
                 }
             }
@@ -319,6 +330,11 @@ export default function DashboardPage() {
                             ⚡ Strong Matches ({jobs.strongMatches.length})
                         </button>
                         <button
+                            onClick={() => setActiveTab('global')}
+                            className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'global' ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
+                            🌍 Global Opportunities ({jobs.globalJobs.length})
+                        </button>
+                        <button
                             onClick={() => setActiveTab('watch')}
                             className={`px-4 py-3 text-sm font-bold border-b-2 transition-colors ${activeTab === 'watch' ? 'border-amber-500 text-amber-700 dark:text-amber-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}>
                             👀 Watch ({(jobs.watchJobs || []).length})
@@ -355,10 +371,11 @@ export default function DashboardPage() {
                                         let currentList: any[] = [];
                                         if (activeTab === 'high') currentList = filterJobs(jobs.highMatches);
                                         if (activeTab === 'strong') currentList = filterJobs(jobs.strongMatches);
+                                        if (activeTab === 'global') currentList = filterJobs(jobs.globalJobs);
                                         if (activeTab === 'watch') currentList = filterJobs(jobs.watchJobs || []);
                                         if (activeTab === 'google') currentList = filterJobs(jobs.googleJobs || []);
                                         if (activeTab === 'all')
-                                            currentList = filterJobs([...(jobs.watchJobs || []), ...jobs.otherJobs]);
+                                            currentList = filterJobs([...(jobs.watchJobs || []), ...jobs.otherJobs, ...jobs.globalJobs]);
                                         if (activeTab === 'applied') currentList = filterJobs(jobs.appliedJobs);
                                         if (activeTab === 'archived') currentList = filterJobs(jobs.archivedJobs);
                                         setSelectedJobs(currentList.map(j => j.id));
@@ -397,10 +414,11 @@ export default function DashboardPage() {
                         <div className="flex-1 grid gap-6 grid-cols-1 xl:grid-cols-2 content-start">
                             {activeTab === 'high' && filterJobs(jobs.highMatches).map(j => renderJobCard(j, true))}
                             {activeTab === 'strong' && filterJobs(jobs.strongMatches).map(j => renderJobCard(j, false))}
+                            {activeTab === 'global' && filterJobs(jobs.globalJobs).map(j => renderJobCard(j, false))}
                             {activeTab === 'watch' && filterJobs(jobs.watchJobs || []).map(j => renderJobCard(j, false))}
                             {activeTab === 'google' && filterJobs(jobs.googleJobs || []).map(j => renderJobCard(j, false))}
                             {activeTab === 'all' &&
-                                filterJobs([...(jobs.watchJobs || []), ...jobs.otherJobs]).map(j => renderJobCard(j, false))}
+                                filterJobs([...(jobs.watchJobs || []), ...jobs.otherJobs, ...jobs.globalJobs]).map(j => renderJobCard(j, false))}
                             {activeTab === 'applied' && filterJobs(jobs.appliedJobs).map(j => renderJobCard(j, false))}
 
                             {/* Archived Job Cards with Restore & Delete */}
@@ -467,6 +485,13 @@ export default function DashboardPage() {
                                 </div>
                             )}
 
+                            {(activeTab === 'global' && filterJobs(jobs.globalJobs).length === 0) && (
+                                <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
+                                    <span className="text-4xl mb-4">🌍</span>
+                                    <p className="text-gray-500 dark:text-gray-400">No global opportunities available yet.</p>
+                                </div>
+                            )}
+
                             {(activeTab === 'watch' && filterJobs(jobs.watchJobs || []).length === 0) && (
                                 <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
                                     <span className="text-4xl mb-4">👀</span>
@@ -482,7 +507,7 @@ export default function DashboardPage() {
                             )}
 
                             {(activeTab === 'all' &&
-                                filterJobs([...(jobs.watchJobs || []), ...jobs.otherJobs]).length === 0) && (
+                                filterJobs([...(jobs.watchJobs || []), ...jobs.otherJobs, ...jobs.globalJobs]).length === 0) && (
                                 <div className="col-span-full border-dashed border-2 border-gray-300 dark:border-gray-700 rounded-xl py-20 text-center flex flex-col items-center justify-center bg-white/50 dark:bg-gray-800/50">
                                     <span className="text-4xl mb-4">🤷‍♂️</span>
                                     <p className="text-gray-500 dark:text-gray-400">No jobs in your feed right now.</p>

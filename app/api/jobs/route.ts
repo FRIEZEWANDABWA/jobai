@@ -17,6 +17,7 @@ export async function GET(request: Request) {
             return NextResponse.json({
                 highMatches: [],
                 strongMatches: [],
+                globalJobs: [],
                 watchJobs: [],
                 googleJobs: [],
                 otherJobs: [],
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
          *,
          match_scores!inner(score),
          applications(status),
-         job_sources(type)
+         job_sources(name, type)
        `)
             .eq('match_scores.user_id', userId)
             .order('created_at', { ascending: false });
@@ -59,8 +60,9 @@ export async function GET(request: Request) {
             }
 
             const sourceType = job.job_sources ? (Array.isArray(job.job_sources) ? job.job_sources[0]?.type : (job.job_sources as any).type) : null;
+            const sourceName = job.job_sources ? (Array.isArray(job.job_sources) ? job.job_sources[0]?.name : (job.job_sources as any).name) : null;
 
-            return { ...job, match_score: score, status, type: sourceType };
+            return { ...job, match_score: score, status, type: sourceType, source_name: sourceName };
         }).sort((a, b) => b.match_score - a.match_score) || [];
 
         const archivedJobs = formattedJobs.filter(j => j.status === 'rejected');
@@ -68,17 +70,52 @@ export async function GET(request: Request) {
         const unappliedJobs = activeJobs.filter(j => !['applied', 'interviewing', 'offer'].includes(j.status));
         const appliedJobs = activeJobs.filter(j => ['applied', 'interviewing', 'offer'].includes(j.status));
 
-        const highMatches = unappliedJobs.filter((j) => j.match_score >= th.notify && j.type !== 'google');
-        const strongMatches = unappliedJobs.filter(
+        // ─── Global Opportunities Sources ────────────────────────────────────────
+        // These are international/remote/NGO sources that bypass local AI scoring tiers.
+        // Jobs from these sources are routed directly to the 🌍 Global Opportunities tab.
+        const GLOBAL_SOURCES = [
+            // Remote Tech Platforms
+            'We Work Remotely',
+            'Remote OK',
+            'Wellfound (AngelList)',
+            // NGO / International Development
+            'NGOJobsInAfrica',
+            'ReliefWeb',
+            'ReliefWeb (IT Africa)',
+            'Impactpool',
+            'Devex (IT Jobs)',
+            // UN System
+            'UN Talent Kenya',
+            'UNDP Careers',
+            'UNICEF',
+            'UN Women',
+            'World Food Programme',
+            'UNOPS',
+            // International Financial Institutions
+            'World Bank Careers',
+            'African Development Bank',
+            'International Finance Corporation',
+            'European Investment Bank',
+            // International Foundations
+            'Bill & Melinda Gates Foundation',
+            'Rockefeller Foundation',
+            'Ford Foundation',
+        ];
+        
+        const globalUnapplied = unappliedJobs.filter(j => GLOBAL_SOURCES.includes(j.source_name));
+        const regularUnapplied = unappliedJobs.filter(j => !GLOBAL_SOURCES.includes(j.source_name));
+
+        const highMatches = regularUnapplied.filter((j) => j.match_score >= th.notify && j.type !== 'google');
+        const strongMatches = regularUnapplied.filter(
             (j) => j.match_score >= th.dashboard && j.match_score < th.notify && j.type !== 'google'
         );
-        const watchJobs = unappliedJobs.filter(
+        const watchJobs = regularUnapplied.filter(
             (j) => j.match_score >= th.watch && j.match_score < th.dashboard && j.type !== 'google'
         );
-        const googleJobs = unappliedJobs.filter((j) => j.type === 'google');
-        const otherJobs = unappliedJobs.filter((j) => j.match_score < th.watch && j.type !== 'google');
+        const googleJobs = regularUnapplied.filter((j) => j.type === 'google');
+        const otherJobs = regularUnapplied.filter((j) => j.match_score < th.watch && j.type !== 'google');
 
-        return NextResponse.json({ highMatches, strongMatches, watchJobs, googleJobs, otherJobs, appliedJobs, archivedJobs });
+        return NextResponse.json({ highMatches, strongMatches, watchJobs, googleJobs, otherJobs, globalJobs: globalUnapplied, appliedJobs, archivedJobs });
     } catch (error: any) {
         console.error('Fetch Jobs Error:', error);
         return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
