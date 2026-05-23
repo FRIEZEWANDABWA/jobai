@@ -209,6 +209,28 @@ async function processJob(job: ClaimedJob) {
         })
         .eq('id', source.id);
 
+    // ─── Source Auto-Disabling ─────────────────────────────────────────────────
+    // Prevent permanently broken sources from wasting queue cycles.
+    // Triggered only after a completed run (not on errors — errors have their own retry logic).
+    if (isSuccess) {
+        if (newZeroRuns >= 50) {
+            // Auto-pause: 50+ consecutive runs with 0 jobs = source is dead
+            await supabase
+                .from('job_sources')
+                .update({ active: false })
+                .eq('id', source.id);
+            console.log(`[AUTO-PAUSE] ${source.name} paused after ${newZeroRuns} consecutive zero runs.`);
+        } else if (newZeroRuns >= 20) {
+            // Auto-throttle: 20+ zero runs = scraper is parsing but site has no jobs OR selectors are broken
+            // Reduce to weekly to stop wasting worker slots every 2 hours
+            await supabase
+                .from('job_sources')
+                .update({ crawl_frequency_minutes: 10080 })
+                .eq('id', source.id);
+            console.log(`[AUTO-THROTTLE] ${source.name} reduced to weekly after ${newZeroRuns} zero runs.`);
+        }
+    }
+
     return {
         success: true,
         ingested: totalIngested
