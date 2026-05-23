@@ -40,6 +40,18 @@ async function processJob(job: ClaimedJob) {
     let jobsFound = 0;
     let totalIngested = 0;
 
+    // ── Playwright sources: skip entirely in Vercel worker ──────────────────
+    // These are handled by GitHub Actions playwright-scraper.yml.
+    // Do not run, do not update health, mark queue job as completed silently.
+    if ((source as any).strategy === 'playwright') {
+        await supabase.from('scrape_jobs').update({
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+            last_error: null,
+        }).eq('id', job.id);
+        return { success: true, ingested: 0 };
+    }
+
     try {
         // Fetch recent hashes for dedupe
         const { data: existingJobs } = await supabase

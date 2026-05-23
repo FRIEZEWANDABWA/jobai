@@ -74,6 +74,12 @@ export async function scrapeSource(source: JobSource, existingHashes: Set<string
             case 'ats_csod':
             case 'ats_mci':
                 return await scrapeAts(source, existingHashes);
+            case 'playwright':
+                // ── Handled by GitHub Actions Playwright workflow ──────────────
+                // Vercel workers skip these sources entirely to avoid false failures.
+                // The playwright-scraper.mjs runs on GitHub Actions with full Chromium.
+                console.log(`[SKIP] ${source.name} uses Playwright strategy — handled by GitHub Actions.`);
+                return [];
             default:
                 console.warn(`Unsupported strategy: ${source.strategy} for source ${source.name}`);
                 return [];
