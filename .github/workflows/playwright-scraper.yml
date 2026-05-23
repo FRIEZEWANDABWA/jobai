@@ -21,7 +21,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: scripts/package.json
 
@@ -49,8 +49,8 @@ jobs:
       - name: Run Playwright scraper
         working-directory: scripts
         env:
-          SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_URL: "https://wjtunfkhxqcwzxgkacbp.supabase.co"
+          SUPABASE_SERVICE_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndqdHVuZmtoeHFjd3p4Z2thY2JwIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3MjI1Njg4OCwiZXhwIjoyMDg3ODMyODg4fQ.fbZiNgA4kt65yoFrzNi8FDnlyRaOzb4QauZJ8nKtIiQ"
         run: node playwright-scraper.mjs
 
       - name: Upload run log as artifact
