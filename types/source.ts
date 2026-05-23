@@ -33,7 +33,7 @@ export interface JobSource {
     
     // New Architectural Fields
     source_kind: 'aggregator' | 'ats' | 'api' | 'rss' | 'company' | 'embassy' | 'ngo';
-    strategy: 'html' | 'proxy_html' | 'browser' | 'api' | 'rss' | 'ats_bamboohr' | 'ats_greenhouse' | 'ats_lever' | 'ats_zoho' | 'ats_workable' | 'ats_csod' | 'ats_mci';
+    strategy: 'html' | 'proxy_html' | 'browser' | 'api' | 'rss' | 'ats_bamboohr' | 'ats_greenhouse' | 'ats_lever' | 'ats_zoho' | 'ats_workable' | 'ats_csod' | 'ats_mci' | 'playwright';
     
     category: string;
     parsing_config: any | null; // JSON config (add selector_version here later)
