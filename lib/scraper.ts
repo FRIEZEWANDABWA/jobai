@@ -91,46 +91,174 @@ async function scrapeApi(source: JobSource, existingHashes: Set<string>): Promis
     const id = setTimeout(() => controller.abort(), timeout);
 
     try {
-        const response = await fetch(source.base_url, { signal: controller.signal });
-        if (!response.ok) throw new Error(`API returned ${response.status}`);
+        const response = await fetch(source.base_url, {
+            headers: {
+                ...getRandomHeaders(),
+                'Accept': 'application/json'
+            },
+            signal: controller.signal
+        });
+
+        if (!response.ok) {
+            throw new Error(`API returned ${response.status}`);
+        }
 
         const data = await response.json();
-        const config = source.parsing_config || {};
+
         const jobs: Partial<Job>[] = [];
-        const items = data[config.resultsKey || 'data'] || [];
+
+        /**
+         * REMOTE OK SPECIAL HANDLING
+         */
+        if (source.name.toLowerCase().includes('remote ok')) {
+
+            const items = Array.isArray(data)
+                ? data.slice(1)
+                : [];
+
+            for (const item of items) {
+
+                const title = item.position || item.title || 'Unknown Title';
+                const company = item.company || 'RemoteOK';
+                const url = item.url || '';
+                const date = item.date || null;
+
+                const hash = generateDedupeHash(title, company, date);
+
+                if (existingHashes.has(hash)) continue;
+                existingHashes.add(hash);
+
+                jobs.push({
+                    title,
+                    company,
+                    location: item.location || 'Remote',
+                    description: item.description || `Remote role at ${company}`,
+                    url,
+                    posted_date: date || new Date().toISOString(),
+                    dedupe_hash: hash,
+                    source_id: source.id
+                });
+            }
+
+            return jobs;
+        }
+
+        /**
+         * RELIEFWEB GENERIC API
+         */
+        const config = source.parsing_config || {};
+        const items = data.data || [];
 
         for (const item of items) {
-            const title = item[config.titleKey || 'title'] || 'Unknown Title';
-            const company = item[config.companyKey || 'organization'] || source.name;
-            const url = item[config.urlKey || 'url'] || '';
-            const date = item[config.dateKey || 'date'] || null;
+
+            const fields = item.fields || item;
+
+            const title =
+                fields.title ||
+                item.title ||
+                'Unknown Title';
+
+            const company =
+                fields.source?.[0]?.name ||
+                source.name;
+
+            const url =
+                fields.url ||
+                item.url ||
+                '';
+
+            const date =
+                fields.date?.created ||
+                item.date ||
+                null;
 
             const hash = generateDedupeHash(title, company, date);
+
             if (existingHashes.has(hash)) continue;
             existingHashes.add(hash);
 
             jobs.push({
                 title,
                 company,
-                location: item[config.locationKey || 'location'] || null,
-                description: item[config.descriptionKey || 'body'] || `Job at ${company}`,
+                location: null,
+                description:
+                    fields.body ||
+                    fields.summary ||
+                    `Job at ${company}`,
                 url,
                 posted_date: date,
                 dedupe_hash: hash,
                 source_id: source.id
             });
         }
+
         return jobs;
+
     } finally {
         clearTimeout(id);
     }
 }
 
 // 2. RSS Scraper
+import Parser from 'rss-parser';
+
+const rssParser = new Parser();
+
 async function scrapeRss(source: JobSource, existingHashes: Set<string>): Promise<Partial<Job>[]> {
+
     console.log(`RSS Scrape for ${source.name}`);
-    // Real implementation would use rss-parser. Stubbed for now as requested.
-    return [];
+
+    try {
+
+        const feed = await rssParser.parseURL(source.base_url);
+
+        const jobs: Partial<Job>[] = [];
+
+        for (const item of feed.items || []) {
+
+            const title = item.title || 'Unknown Title';
+
+            const company =
+                item.creator ||
+                source.name;
+
+            const url =
+                item.link ||
+                source.base_url;
+
+            const date =
+                item.pubDate ||
+                new Date().toISOString();
+
+            const hash = generateDedupeHash(title, company, date);
+
+            if (existingHashes.has(hash)) continue;
+
+            existingHashes.add(hash);
+
+            jobs.push({
+                title,
+                company,
+                location: 'Remote',
+                description:
+                    item.contentSnippet ||
+                    item.content ||
+                    `Job at ${company}`,
+                url,
+                posted_date: date,
+                dedupe_hash: hash,
+                source_id: source.id
+            });
+        }
+
+        return jobs;
+
+    } catch (error) {
+
+        console.error(`RSS parsing failed for ${source.name}`, error);
+
+        return [];
+    }
 }
 
 // 3. HTML & Proxy HTML Scraper
